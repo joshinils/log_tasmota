@@ -2,6 +2,9 @@
 
 # to be invoked by cron
 
+# make callable from anywhere
+cd "$( dirname "${BASH_SOURCE[0]}" )" || exit
+
 # check if a screen session with name "tasmota_log" exists,
 # if not, create it
 
