@@ -9,6 +9,7 @@ import csv
 
 class Tasmota:
     # Copied from Felix Weichselgartner at <https://github.com/FelixWeichselgartner/Tasmota-HTTP-python>
+    # Modified by me
     # GPLv3
 
     def __init__(self, ipv4):
@@ -17,7 +18,7 @@ class Tasmota:
         self.stream_open = False
 
     def _get_from_xpath(self, x):
-        r = requests.get(self.url + '')
+        r = requests.get(self.url + '', timeout=10, )
         tree = html.fromstring(r.content)
         c = tree.xpath(f'{x}/text()')
         return c
@@ -50,7 +51,7 @@ class Tasmota:
         data["Temperature1"] = j['StatusSNS']['ANALOG']["Temperature1"]
         for k, v in j['StatusSNS']['ENERGY'].items():
             data[k] = v
-
+        data["power1"] = json.loads(str(self.check_output(1))[2:-1])["POWER"]
         return data
 
 def log_to_csv(ipv4: str):
@@ -69,11 +70,17 @@ def log_to_csv(ipv4: str):
         "Total": "kWh",
         "Temperature1": "°C",
         "TotalStartTime": "",
+        "power1": "bool",
     }
 
     header = [attribute for attribute in attribute_unit.keys()]
 
-    file_name = f"{dev.get_name()}_{ipv4}_log.csv"
+    try:
+        device_name = dev.get_name()
+    except:
+        return
+
+    file_name = f"{device_name}_{ipv4}_log.csv"
 
     # read header line from existing file
     try:
