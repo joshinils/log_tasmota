@@ -1,49 +1,54 @@
 #!/usr/bin/env python3
 
+import csv
+import json
+from numbers import Number
+from typing import Dict, SupportsComplex
+
 import requests
 from lxml import html
-import json
-import csv
+
+Numeric = SupportsComplex | Number | int
 
 # Doc: https://tasmota.github.io/docs/Commands/#management
+
 
 class Tasmota:
     # Copied from Felix Weichselgartner at <https://github.com/FelixWeichselgartner/Tasmota-HTTP-python>
     # Modified by me
     # GPLv3
 
-    def __init__(self, ipv4):
+    def __init__(self: 'Tasmota', ipv4: str) -> None:
         self.ipv4 = ipv4
         self.url = f'http://{self.ipv4}/'
         self.stream_open = False
 
-    def _get_from_xpath(self, x):
+    def _get_from_xpath(self: 'Tasmota', x: str | Numeric):  # type: ignore[no-untyped-def]
         r = requests.get(self.url + '', timeout=10, )
         tree = html.fromstring(r.content)
         c = tree.xpath(f'{x}/text()')
         return c
 
-    def get_name(self):
+    def get_name(self: 'Tasmota') -> str:
         text = self._get_from_xpath('/html/body/div/div[1]/h3')[0]
         return str(text)
 
-    def check_output(self, number):
-        r = requests.get(self.url + f'cm?cmnd=Power{number}%20')
-        return r.content
+    def check_output(self: 'Tasmota', number: str | Numeric) -> bytes:
+        r = requests.get(f'{self.url}cm?cmnd=Power{number}%20')
+        return bytes(r.content)
 
-    def set_output(self, number, state):
-        r = requests.get(self.url + f'cm?cmnd=Power{number}%20{state}')
-        return r.content
+    def set_output(self: 'Tasmota', number: str | Numeric, state: str | Numeric) -> bytes:
+        r = requests.get(f'{self.url}cm?cmnd=Power{number}%20{state}')
+        return bytes(r.content)
 
-    def get_stream_url(self):
+    def get_stream_url(self: 'Tasmota') -> str:
         if not self.stream_open:
-            r = requests.get(self.url)
+            requests.get(self.url)
             self.stream_open = True
         return f'http://{self.ipv4}:81/stream'
 
-
-    def get_all_monitoring(self):
-        r = requests.get(self.url + f'cm?cmnd=Status%208')
+    def get_all_monitoring(self: 'Tasmota') -> Dict:
+        r = requests.get(f'{self.url}cm?cmnd=Status%208')
         text = str(r.content)
         j = json.loads(text[2:-1])
         data = {}
@@ -54,7 +59,8 @@ class Tasmota:
         data["power1"] = json.loads(str(self.check_output(1))[2:-1])["POWER"]
         return data
 
-def log_to_csv(ipv4: str):
+
+def log_to_csv(ipv4: str) -> None:
     dev = Tasmota(ipv4)
 
     attribute_unit = {
@@ -77,7 +83,9 @@ def log_to_csv(ipv4: str):
 
     try:
         device_name = dev.get_name()
-    except:
+    except Exception as e:
+        print(f"Device {ipv4} not reachable")
+        print(type(e), e)
         return
 
     file_name = f"{device_name}_{ipv4}_log.csv"
@@ -115,4 +123,7 @@ def log_to_csv(ipv4: str):
                 row.append(data[attribute])
         csv_writer.writerow(row)
 
+
 log_to_csv("192.168.2.107")
+log_to_csv("192.168.2.77")
+log_to_csv("192.168.2.134")
