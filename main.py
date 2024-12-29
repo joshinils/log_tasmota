@@ -161,14 +161,26 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
         lines = list(csv_reader)
 
     json_name = csv_log_name.replace(".csv", ".json")
-    with open(json_name, mode='r') as file:
-        config = json.loads(file.read())
+
+    try:
+        with open(json_name, mode='r') as file:
+            config = json.loads(file.read())
+    except FileNotFoundError:
+        config = {}
 
     min_off_power = config.get("off_power", 0)
     max_idle_power = config.get("max_idle_power", 5)
     min_idle_minutes = config.get("min_idle_minutes", 1)
     min_idle_count = config.get("min_idle_count", 5)
     min_done_count = config.get("min_done_count", 4)
+
+    # set defaults
+    config["off_power"] = min_off_power
+    config["max_idle_power"] = max_idle_power
+    config["min_idle_minutes"] = min_idle_minutes
+    config["min_idle_count"] = min_idle_count
+    config["min_done_count"] = min_done_count
+
 
     done_count = 0
     off_count = 0
