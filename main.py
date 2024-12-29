@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 import csv
+import datetime
 import json
+import time
 from numbers import Number
-from typing import Dict, SupportsComplex
+from os.path import expanduser
+from typing import Dict, Optional, SupportsComplex
 
 import requests
 from lxml import html
@@ -60,7 +63,7 @@ class Tasmota:
         return data
 
 
-def log_to_csv(ipv4: str) -> None:
+def log_to_csv(ipv4: str) -> Optional[str]:
     dev = Tasmota(ipv4)
 
     attribute_unit = {
@@ -86,7 +89,7 @@ def log_to_csv(ipv4: str) -> None:
     except Exception as e:
         print(f"Device {ipv4} not reachable")
         print(type(e), e)
-        return
+        return None
 
     file_name = f"{device_name}_{ipv4}_log.csv"
 
@@ -123,7 +126,168 @@ def log_to_csv(ipv4: str) -> None:
                 row.append(data[attribute])
         csv_writer.writerow(row)
 
+    return file_name
 
-log_to_csv("192.168.2.107")
-log_to_csv("192.168.2.77")
-log_to_csv("192.168.2.134")
+
+def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> None:
+    message = message.replace(".", "\\.")
+
+    home = expanduser("~")
+    with open(f"{home}/Documents/erinner_bot/TOKEN", 'r') as f:
+        bot_token = f.read()
+    if message_thread_id is not None:
+        send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}&disable_notification={disable_notification}&message_thread_id={message_thread_id}'
+    else:
+        send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}&disable_notification={disable_notification}'
+
+    print(f"{send_text=}")
+    response = requests.get(send_text)
+    print(type(response), response)
+    return response.json()
+
+home = expanduser("~")
+with open(f"{home}/Documents/erinner_bot/server-mail.id", 'r') as f:
+    server_mail_id = f.read()
+tasmota_thread_id = "4061"
+# print(telegram_bot_sendtext("Test", server_mail_id, True, tasmota_thread_id))
+
+# exit()
+
+def check_done(csv_log_name: str, ipv4: str) -> None:
+    # read csv file
+    with open(csv_log_name, mode='r') as file:
+        csv_reader = csv.reader(file, delimiter=',')
+        header = next(csv_reader)
+        lines = list(csv_reader)
+
+    json_name = csv_log_name.replace(".csv", ".json")
+    with open(json_name, mode='r') as file:
+        config = json.loads(file.read())
+
+    min_off_power = config.get("off_power", 0)
+    max_idle_power = config.get("max_idle_power", 5)
+    min_idle_minutes = config.get("min_idle_minutes", 1)
+    min_idle_count = config.get("min_idle_count", 5)
+    min_done_count = config.get("min_done_count", 4)
+
+    done_count = 0
+    off_count = 0
+    min_time = None
+    max_time = None
+    last_total_power = None
+    for count, line in enumerate(lines[::-1]):
+        power = float(line[header.index("Power")])
+        time = datetime.datetime.fromisoformat(line[header.index("Time")])
+        max_time = max(max_time or time, time)
+        min_time = min(min_time or time, time)
+
+        delta = max_time - min_time
+        idle_delta = datetime.timedelta(minutes=min_idle_minutes)
+        # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
+        if count > min_idle_count and delta > idle_delta:
+            break
+
+        last_total_power = line[header.index("Total")]
+        if min_off_power < power <= max_idle_power:
+            done_count += 1
+        if power <= min_off_power:
+            off_count += 1
+        # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
+
+    if "stats" not in config:
+        config["stats"] = {}
+    if "done" not in config["stats"]:
+        config["stats"]["done"] = {}
+    if "off" not in config["stats"]:
+        config["stats"]["off"] = {}
+    if "on" not in config["stats"]:
+        config["stats"]["on"] = {}
+
+    stats_time_on   = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+    stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
+    stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
+
+    if done_count >= min_done_count:
+        print("Done")
+        if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
+            config["stats"]["done"]["time"] = min_time.isoformat()
+            config["stats"]["done"]["power_total"] = last_total_power
+        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat())):
+            power_done = config["stats"]["done"]["power_total"]
+            power_start = config["stats"]["on"].get("power_total", 0)
+            power_used = float(power_done) - float(power_start)
+
+            time_on = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+            time_done = datetime.datetime.fromisoformat(config["stats"]["done"]["time"])
+            time_used = time_done - time_on
+
+            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used}W verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+            if result.get("ok"):
+                config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+
+
+    if off_count >= min_done_count:
+        print("Off")
+        if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
+            config["stats"]["off"]["time"] = min_time.isoformat()
+            config["stats"]["off"]["power_total"] = last_total_power
+        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat())):
+            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
+            if result.get("ok"):
+                config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+
+    if off_count >= min_done_count -1 and float(lines[-1][header.index("Power")]) > min_off_power:
+        print("On")
+        if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
+            config["stats"]["on"]["time"] = max_time.isoformat()
+            config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat())):
+            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
+            if result.get("ok"):
+                config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+
+    print(config)
+    with open(json_name, mode='w') as file:
+        dump = json.dumps(config, indent=4)
+        file.write(dump)
+
+    print(csv_log_name)
+    print(header)
+    for line in lines[-5:]:
+        print(line)
+
+
+def prune_file(csv_log_name: str) -> None:
+    pass
+
+
+def do_once(ipv4: str) -> None:
+    file = log_to_csv(ipv4)
+    check_done(file, ipv4)
+    prune_file(file)
+
+
+def main():
+    ips = [
+        "192.168.2.77",  # WMS
+        "192.168.2.107",  # TRK
+        "192.168.2.134",  # SPM
+    ]
+
+    total_start = time.time()
+    for i in range(10, 61, 10):
+        for ip in ips:
+            start = time.time()
+            do_once(ip)
+            end = time.time()
+            print(end - total_start, end - start, ip)
+            print()
+        time.sleep(i - (end - total_start))
+
+
+if __name__ == "__main__":
+    main()
+
