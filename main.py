@@ -219,47 +219,54 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
     stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
     stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
 
-    if done_count >= min_done_count:
-        print("Done")
-        if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
-            config["stats"]["done"]["time"] = min_time.isoformat()
-            config["stats"]["done"]["power_total"] = last_total_power
-        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
-        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat())):
-            power_done = config["stats"]["done"]["power_total"]
-            power_start = config["stats"]["on"].get("power_total", 0)
-            power_used = float(power_done) - float(power_start)
+    delta_last_any = max_time - max(stats_time_on, stats_time_off, stats_time_done)
+    if delta_last_any < datetime.timedelta(minutes=min_idle_minutes * 1.1):
+        config["stats"]["skipped_print_count"] = config["stats"].get("skipped_print_count", 0) + 1
+    else:
+        config["stats"]["skipped_print_count"] = 0
 
-            time_on = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-            time_done = datetime.datetime.fromisoformat(config["stats"]["done"]["time"])
-            time_used = time_done - time_on
+    if config["stats"]["skipped_print_count"] < min_done_count:
+        if done_count >= min_done_count:
+            print("Done")
+            if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
+                config["stats"]["done"]["time"] = min_time.isoformat()
+                config["stats"]["done"]["power_total"] = last_total_power
+            last_sent_time = datetime.datetime.fromisoformat(config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+            if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat())):
+                power_done = config["stats"]["done"]["power_total"]
+                power_start = config["stats"]["on"].get("power_total", 0)
+                power_used = float(power_done) - float(power_start)
 
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used}W verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
-            if result.get("ok"):
-                config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+                time_on = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+                time_done = datetime.datetime.fromisoformat(config["stats"]["done"]["time"])
+                time_used = time_done - time_on
+
+                result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used}W verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+                if result.get("ok"):
+                    config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
 
 
-    if off_count >= min_done_count:
-        print("Off")
-        if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
-            config["stats"]["off"]["time"] = min_time.isoformat()
-            config["stats"]["off"]["power_total"] = last_total_power
-        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
-        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat())):
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
-            if result.get("ok"):
-                config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+        if off_count >= min_done_count:
+            print("Off")
+            if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
+                config["stats"]["off"]["time"] = min_time.isoformat()
+                config["stats"]["off"]["power_total"] = last_total_power
+            last_sent_time = datetime.datetime.fromisoformat(config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+            if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat())):
+                result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
+                if result.get("ok"):
+                    config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
 
-    if off_count >= min_done_count -1 and float(lines[-1][header.index("Power")]) > min_off_power:
-        print("On")
-        if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
-            config["stats"]["on"]["time"] = max_time.isoformat()
-            config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
-        last_sent_time = datetime.datetime.fromisoformat(config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
-        if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat())):
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
-            if result.get("ok"):
-                config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+        if off_count >= min_done_count -1 and float(lines[-1][header.index("Power")]) > min_off_power:
+            print("On")
+            if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
+                config["stats"]["on"]["time"] = max_time.isoformat()
+                config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+            last_sent_time = datetime.datetime.fromisoformat(config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+            if last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat())):
+                result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
+                if result.get("ok"):
+                    config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
 
     print(config)
     with open(json_name, mode='w') as file:
