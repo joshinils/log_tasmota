@@ -129,7 +129,7 @@ def log_to_csv(ipv4: str) -> Optional[str]:
     return file_name
 
 
-def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> None:
+def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> Dict:
     message = message.replace(".", "\\.")
 
     home = expanduser("~")
@@ -143,7 +143,9 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
     print(f"{send_text=}")
     response = requests.get(send_text)
     print(type(response), response)
-    return response.json()
+    response_json: Dict = response.json()
+    return response_json
+
 
 home = expanduser("~")
 with open(f"{home}/Documents/erinner_bot/server-mail.id", 'r') as f:
@@ -154,7 +156,7 @@ tasmota_thread_id = "4061"
 # exit()
 
 
-def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str):
+def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str) -> Dict:
     print("Done")
     if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
         config["stats"]["done"]["time"] = min_time.isoformat()
@@ -175,7 +177,7 @@ def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: d
     return config
 
 
-def print_off(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str):
+def print_off(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str) -> Dict:
     print("Off")
     if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
         config["stats"]["off"]["time"] = min_time.isoformat()
@@ -188,7 +190,7 @@ def print_off(config: Dict, stats_time_on: datetime.datetime, stats_time_off: da
     return config
 
 
-def print_on(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, max_time: datetime.datetime, csv_log_name: str, lines: List[List[str]], header: List[str]):
+def print_on(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, max_time: datetime.datetime, csv_log_name: str, lines: List[List[str]], header: List[str]) -> Dict:
     print("On")
     if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
         config["stats"]["on"]["time"] = max_time.isoformat()
@@ -229,12 +231,11 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
     config["min_idle_count"] = min_idle_count
     config["min_done_count"] = min_done_count
 
-
     done_count = 0
     off_count = 0
-    min_time = None
-    max_time = None
-    last_total_power = None
+    min_time = datetime.datetime.max
+    max_time = datetime.datetime.min
+    last_total_power = "0"
     for count, line in enumerate(lines[::-1]):
         power = float(line[header.index("Power")])
         time = datetime.datetime.fromisoformat(line[header.index("Time")])
@@ -263,9 +264,9 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
     if "on" not in config["stats"]:
         config["stats"]["on"] = {}
 
-    stats_time_on   = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-    stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
-    stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
+    stats_time_on   = datetime.datetime.fromisoformat(config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+    stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+    stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
 
     delta_last_any = max_time - max(stats_time_on, stats_time_off, stats_time_done)
     if delta_last_any < datetime.timedelta(minutes=min_idle_minutes * 1.1):
@@ -280,7 +281,7 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
         if off_count >= min_done_count:
             config = print_off(config, stats_time_on, stats_time_off, stats_time_done, min_time, last_total_power, csv_log_name)
 
-        if off_count >= min_done_count -1 and float(lines[-1][header.index("Power")]) > min_off_power:
+        if off_count >= min_done_count - 1 and float(lines[-1][header.index("Power")]) > min_off_power:
             config = print_on(config, stats_time_on, stats_time_off, stats_time_done, max_time, csv_log_name, lines, header)
 
     print(config)
@@ -300,11 +301,13 @@ def prune_file(csv_log_name: str) -> None:
 
 def do_once(ipv4: str) -> None:
     file = log_to_csv(ipv4)
+    if file is None:
+        return
     check_done(file, ipv4)
     prune_file(file)
 
 
-def main():
+def main() -> None:
     ips = [
         "192.168.2.77",  # WMS
         "192.168.2.107",  # TRK
