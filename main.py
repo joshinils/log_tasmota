@@ -171,7 +171,7 @@ def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: d
         time_done = datetime.datetime.fromisoformat(config["stats"]["done"]["time"])
         time_used = time_done - time_on
 
-        result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used}W verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+        result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
         if result.get("ok"):
             config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
     return config
