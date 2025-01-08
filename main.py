@@ -26,7 +26,7 @@ class Tasmota:
         self.url = f'http://{self.ipv4}/'
         self.stream_open = False
 
-    def _get_from_xpath(self: 'Tasmota', x: str | Numeric):  # type: ignore[no-untyped-def]
+    def _get_from_xpath(self: 'Tasmota', x: str | Numeric):  # type: ignore
         r = requests.get(self.url + '', timeout=10, )
         tree = html.fromstring(r.content)
         c = tree.xpath(f'{x}/text()')
@@ -156,7 +156,15 @@ tasmota_thread_id = "4061"
 # exit()
 
 
-def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str) -> Dict:
+def print_done(
+    config: Dict,
+    stats_time_on: datetime.datetime,
+    stats_time_off: datetime.datetime,
+    stats_time_done: datetime.datetime,
+    min_time: datetime.datetime,
+    last_total_power: str,
+    csv_log_name: str
+) -> Dict:
     print("Done")
     if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
         config["stats"]["done"]["time"] = min_time.isoformat()
@@ -177,7 +185,15 @@ def print_done(config: Dict, stats_time_on: datetime.datetime, stats_time_off: d
     return config
 
 
-def print_off(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, min_time: datetime.datetime, last_total_power: str, csv_log_name: str) -> Dict:
+def print_off(
+    config: Dict,
+    stats_time_on: datetime.datetime,
+    stats_time_off: datetime.datetime,
+    stats_time_done: datetime.datetime,
+    min_time: datetime.datetime,
+    last_total_power: str,
+    csv_log_name: str
+) -> Dict:
     print("Off")
     if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
         config["stats"]["off"]["time"] = min_time.isoformat()
@@ -190,7 +206,16 @@ def print_off(config: Dict, stats_time_on: datetime.datetime, stats_time_off: da
     return config
 
 
-def print_on(config: Dict, stats_time_on: datetime.datetime, stats_time_off: datetime.datetime, stats_time_done: datetime.datetime, max_time: datetime.datetime, csv_log_name: str, lines: List[List[str]], header: List[str]) -> Dict:
+def print_on(
+    config: Dict,
+    stats_time_on: datetime.datetime,
+    stats_time_off: datetime.datetime,
+    stats_time_done: datetime.datetime,
+    max_time: datetime.datetime,
+    csv_log_name: str,
+    lines: List[List[str]],
+    header: List[str]
+) -> Dict:
     print("On")
     if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
         config["stats"]["on"]["time"] = max_time.isoformat()
@@ -203,7 +228,31 @@ def print_on(config: Dict, stats_time_on: datetime.datetime, stats_time_off: dat
     return config
 
 
-def check_done(csv_log_name: str, ipv4: str) -> None:
+def load_config(json_name: str) -> Dict:
+    try:
+        with open(json_name, mode='r') as file:
+            config = json.loads(file.read())
+    except FileNotFoundError:
+        config = {}
+
+    # set defaults
+    config["off_power"] = config.get("off_power", 0)
+    config["max_idle_power"] = config.get("max_idle_power", 5)
+    config["min_idle_minutes"] = config.get("min_idle_minutes", 20)
+    config["min_idle_count"] = config.get("min_idle_count", 5)
+    config["min_done_count"] = config.get("min_done_count", 4)
+
+    return config
+
+
+def save_config(json_name: str, config: Dict) -> None:
+    print(config)
+    with open(json_name, mode='w') as file:
+        dump = json.dumps(config, indent=4)
+        file.write(dump)
+
+
+def check_status(csv_log_name: str, ipv4: str) -> None:
     # read csv file
     with open(csv_log_name, mode='r') as file:
         csv_reader = csv.reader(file, delimiter=',')
@@ -212,24 +261,13 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
 
     json_name = csv_log_name.replace(".csv", ".json")
 
-    try:
-        with open(json_name, mode='r') as file:
-            config = json.loads(file.read())
-    except FileNotFoundError:
-        config = {}
+    config = load_config(json_name)
 
-    min_off_power = config.get("off_power", 0)
-    max_idle_power = config.get("max_idle_power", 5)
-    min_idle_minutes = config.get("min_idle_minutes", 1)
-    min_idle_count = config.get("min_idle_count", 5)
-    min_done_count = config.get("min_done_count", 4)
-
-    # set defaults
-    config["off_power"] = min_off_power
-    config["max_idle_power"] = max_idle_power
-    config["min_idle_minutes"] = min_idle_minutes
-    config["min_idle_count"] = min_idle_count
-    config["min_done_count"] = min_done_count
+    min_off_power = config["off_power"]
+    max_idle_power = config["max_idle_power"]
+    min_idle_minutes = config["min_idle_minutes"]
+    min_idle_count = config["min_idle_count"]
+    min_done_count = config["min_done_count"]
 
     done_count = 0
     off_count = 0
@@ -264,8 +302,8 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
     if "on" not in config["stats"]:
         config["stats"]["on"] = {}
 
-    stats_time_on   = datetime.datetime.fromisoformat(config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-    stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+    stats_time_on = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+    stats_time_off = datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
     stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
 
     delta_last_any = max_time - max(stats_time_on, stats_time_off, stats_time_done)
@@ -284,10 +322,7 @@ def check_done(csv_log_name: str, ipv4: str) -> None:
         if off_count >= min_done_count - 1 and float(lines[-1][header.index("Power")]) > min_off_power:
             config = print_on(config, stats_time_on, stats_time_off, stats_time_done, max_time, csv_log_name, lines, header)
 
-    print(config)
-    with open(json_name, mode='w') as file:
-        dump = json.dumps(config, indent=4)
-        file.write(dump)
+    save_config(json_name, config)
 
     print(csv_log_name)
     print(header)
@@ -303,7 +338,7 @@ def do_once(ipv4: str) -> None:
     file = log_to_csv(ipv4)
     if file is None:
         return
-    check_done(file, ipv4)
+    check_status(file, ipv4)
     prune_file(file)
 
 
@@ -322,9 +357,9 @@ def main() -> None:
             end = time.time()
             print(end - total_start, end - start, ip)
             print()
-        time.sleep(i - (end - total_start))
+        if i < 60:
+            time.sleep(i - (end - total_start))
 
 
 if __name__ == "__main__":
     main()
-
