@@ -37,6 +37,8 @@ def update_dict_recursive(config: Dict, default: Dict, reset: bool = False) -> D
 
 
 class Config():
+    json_name: str
+
     config: Dict
     min_off_power: float
     max_idle_power: float
@@ -52,8 +54,8 @@ class Config():
 
     def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
         self.config = {}
-        self.load_config(reset)
         self.json_name = json_name
+        self.load_config(reset)
 
     def load_config(self: 'Config', reset: bool = False) -> None:
         try:
