@@ -251,7 +251,9 @@ def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
 
 
 def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> Dict:
-    message = message.replace(".", "\\.")
+    escape_chars = ['_', '*', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']  # not including "`", which I use to format as code
+    for char in escape_chars:
+        message = message.replace(char, f"\\{char}")
 
     home = expanduser("~")
     with open(f"{home}/Documents/erinner_bot/TOKEN", 'r') as f:
@@ -263,8 +265,8 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
 
     print(f"{send_text=}")
     response = requests.get(send_text)
-    print(type(response), response)
     response_json: Dict = response.json()
+    print(type(response), response_json)
     return response_json
 
 
