@@ -8,26 +8,135 @@ import sys
 import time
 from numbers import Number
 from os.path import expanduser
-from typing import Dict, List, Optional, SupportsComplex, Tuple
+from typing import Dict, List, Optional, SupportsComplex
 
 import requests
 import tqdm
 from lxml import html
 
-Numeric = SupportsComplex | Number | int
-config_type_dict_rec = Dict[str, int | str | "config_type_dict_rec"]
+Numeric = SupportsComplex | Number | int | float
 
 
 def eprint(*args, **kwargs) -> None:  # type: ignore
     print(f"{inspect.stack()[1][1]}:{inspect.stack()[1][2]};{inspect.stack()[1][3]}", *args, file=sys.stderr, **kwargs)
 
 
-# Doc: https://tasmota.github.io/docs/Commands/#management
+def update_dict_recursive(config: Dict, default: Dict, reset: bool = False) -> Dict:
+    for default_key, default_value in default.items():
+        if isinstance(default_value, dict):
+            if default_key not in config:
+                config[default_key] = {}
+            foo = config[default_key]
+            config[default_key] = update_dict_recursive(foo, default_value)
+        else:
+            if reset:
+                config[default_key] = default_value
+            else:
+                config[default_key] = config.get(default_key, default_value)
+    return config
+
+
+class Config():
+    config: Dict
+    min_off_power: float
+    max_idle_power: float
+    min_data_window_minutes: float
+    min_idle_count: float
+    min_done_count: float
+    min_runtime_minutes: float
+
+    last_power_on_time: datetime.datetime = datetime.datetime.min
+    last_power_off_time: datetime.datetime = datetime.datetime.min
+    last_done_time: datetime.datetime = datetime.datetime.min
+    min_data_window: datetime.timedelta
+
+    def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
+        self.config = {}
+        self.load_config(json_name, reset)
+
+    def load_config(self: 'Config', json_name: str, reset: bool = False) -> None:
+        try:
+            with open(json_name, mode='r') as file:
+                self.config = json.loads(file.read())
+        except FileNotFoundError:
+            pass
+
+        default = {
+            "off_power": 0,
+            "max_idle_power": 5,
+            "min_runtime_minutes": 20,
+            "min_data_window_minutes": 0.9,
+            "min_idle_count": 5,
+            "min_done_count": 4,
+            "stats": {
+                "skipped_print_count": 0,
+                "on": {
+                    "last_sent": datetime.datetime.min.isoformat(),
+                    "power_total": 0
+                },
+                "off": {
+                    "last_sent": datetime.datetime.min.isoformat(),
+                    "power_total": 0
+                },
+                "done": {
+                    "last_sent": datetime.datetime.min.isoformat(),
+                    "power_total": 0
+                },
+            }
+        }
+
+        self.config = update_dict_recursive(self.config, default, reset)
+
+        self.min_off_power           = float(self.config["off_power"])                # noqa: E221
+        self.max_idle_power          = float(self.config["max_idle_power"])           # noqa: E221
+        self.min_data_window_minutes = float(self.config["min_data_window_minutes"])  # noqa: E221
+        self.min_idle_count          = float(self.config["min_idle_count"])           # noqa: E221
+        self.min_done_count          = float(self.config["min_done_count"])           # noqa: E221
+        self.min_runtime_minutes     = float(self.config["min_runtime_minutes"])      # noqa: E221
+
+        self.last_power_on_time   = datetime.datetime.fromisoformat(self.config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+        self.last_power_off_time  = datetime.datetime.fromisoformat(self.config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+        self.last_done_time       = datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
+        self.min_data_window      = datetime.timedelta(minutes=self.min_data_window_minutes)  # noqa E221
+
+    def save_config(self: 'Config', json_name: str) -> None:
+        self.config["off_power"              ] = self.min_off_power            # noqa: E221, E202
+        self.config["max_idle_power"         ] = self.max_idle_power           # noqa: E221, E202
+        self.config["min_data_window_minutes"] = self.min_data_window_minutes  # noqa: E221, E202
+        self.config["min_idle_count"         ] = self.min_idle_count           # noqa: E221, E202
+        self.config["min_done_count"         ] = self.min_done_count           # noqa: E221, E202
+        self.config["min_runtime_minutes"    ] = self.min_runtime_minutes      # noqa: E221, E202
+
+        self.config["stats"]["on"  ]["time"] = self.last_power_on_time.isoformat()   # noqa: E221, E202
+        self.config["stats"]["off" ]["time"] = self.last_power_off_time.isoformat()  # noqa: E221, E202
+        self.config["stats"]["done"]["time"] = self.last_done_time.isoformat()       # noqa: E221, E202
+
+        deprecated_keys = ["min_idle_minutes"]
+        for key in deprecated_keys:
+            if key in self.config:
+                del self.config[key]
+
+        with open(json_name, mode='w') as file:
+            dump = json.dumps(self.config, indent=4)
+            file.write(dump)
+
+    def increase_skipped_count(self: 'Config') -> None:
+        self.config["stats"]["skipped_print_count"] = self.config["stats"].get("skipped_print_count", 0) + 1
+
+    def reset_skipped_count(self: 'Config') -> None:
+        self.config["stats"]["skipped_print_count"] = 0
+
+    @property
+    def skipped_count(self: 'Config') -> int:
+        return int(self.config["stats"].get("skipped_print_count", 0))
+
+
 class Tasmota:
     # Copied from Felix Weichselgartner at <https://github.com/FelixWeichselgartner/Tasmota-HTTP-python>
     # Modified by me
     # GPLv3
 
+    # Doc: https://tasmota.github.io/docs/Commands/#management
     def __init__(self: 'Tasmota', ipv4: str) -> None:
         self.ipv4 = ipv4
         self.url = f'http://{self.ipv4}/'
@@ -166,150 +275,102 @@ tasmota_thread_id = "4061"
 
 
 def print_done(
-    config: Dict,
-    stats_time_on: datetime.datetime,
-    stats_time_off: datetime.datetime,
-    stats_time_done: datetime.datetime,
+    config: Config,
     min_time: datetime.datetime,
     last_total_power: str,
     csv_log_name: str,
     suppress_message: bool,
-) -> Tuple[Dict, bool]:
+) -> bool:
     eprint("Done")
-    if stats_time_on > stats_time_done or stats_time_off > stats_time_done or stats_time_done.year == 1:
-        config["stats"]["done"]["time"] = min_time.isoformat()
-        config["stats"]["done"]["power_total"] = last_total_power
-    last_sent_time = datetime.datetime.fromisoformat(config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+    if (
+        config.last_power_on_time + config.min_data_window > config.last_done_time
+        or
+        config.last_power_off_time + config.min_data_window > config.last_done_time
+        or
+        config.last_done_time.year == 1  # done is missing
+    ):
+        config.config["stats"]["done"]["time"] = min_time.isoformat()
+        config.config["stats"]["done"]["power_total"] = last_total_power
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
+    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
     if sending_message:
-        power_done = config["stats"]["done"]["power_total"]
-        power_start = config["stats"]["on"].get("power_total", 0)
+        power_done = config.config["stats"]["done"]["power_total"]
+        power_start = config.config["stats"]["on"].get("power_total", 0)
         power_used = float(power_done) - float(power_start)
 
-        time_on = datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-        time_done = datetime.datetime.fromisoformat(config["stats"]["done"]["time"])
+        time_on = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+        time_done = datetime.datetime.fromisoformat(config.config["stats"]["done"]["time"])
         time_used = time_done - time_on
 
         if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
             if result.get("ok"):
-                config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+                config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
-            config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
-    return config, sending_message
+            config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+    return sending_message
 
 
 def print_off(
-    config: Dict,
-    stats_time_on: datetime.datetime,
-    stats_time_off: datetime.datetime,
-    stats_time_done: datetime.datetime,
+    config: Config,
     min_time: datetime.datetime,
     last_total_power: str,
     csv_log_name: str,
     suppress_message: bool,
-) -> Tuple[Dict, bool]:
+) -> bool:
     eprint("Off")
-    if stats_time_on > stats_time_off or stats_time_done > stats_time_off or stats_time_off.year == 1:
-        config["stats"]["off"]["time"] = min_time.isoformat()
-        config["stats"]["off"]["power_total"] = last_total_power
-    last_sent_time = datetime.datetime.fromisoformat(config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+    if (
+        config.last_power_on_time + config.min_data_window > config.last_power_off_time
+        or
+        config.last_done_time + config.min_data_window > config.last_power_off_time
+        or
+        config.last_power_off_time.year == 1
+    ):
+        config.config["stats"]["off"]["time"] = min_time.isoformat()
+        config.config["stats"]["off"]["power_total"] = last_total_power
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
+    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
     if sending_message:
         if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
+            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
             if result.get("ok"):
-                config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+                config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
-            config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
-    return config, sending_message
+            config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+    return sending_message
 
 
 def print_on(
-    config: Dict,
-    stats_time_on: datetime.datetime,
-    stats_time_off: datetime.datetime,
-    stats_time_done: datetime.datetime,
+    config: Config,
     max_time: datetime.datetime,
     csv_log_name: str,
     lines: List[List[str]],
     header: List[str],
     suppress_message: bool,
-) -> Tuple[Dict, bool]:
+) -> bool:
     eprint("On")
-    if stats_time_off > stats_time_on or stats_time_done > stats_time_on or stats_time_on.year == 1:
-        config["stats"]["on"]["time"] = max_time.isoformat()
-        config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
-    last_sent_time = datetime.datetime.fromisoformat(config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+    if (
+        config.last_power_off_time > config.last_power_on_time
+        or
+        config.last_done_time > config.last_power_on_time
+        or
+        config.last_power_on_time.year == 1
+    ):
+        config.config["stats"]["on"]["time"] = max_time.isoformat()
+        config.config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
     if sending_message:
         if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
+            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
             if result.get("ok"):
-                config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+                config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
-            config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
-    return config, sending_message
-
-
-def update_dict_recursive(config: config_type_dict_rec, default: config_type_dict_rec, reset: bool = False) -> config_type_dict_rec:
-    for default_key, default_value in default.items():
-        if isinstance(default_value, dict):
-            if default_key not in config:
-                config[default_key] = {}
-            foo = config[default_key]
-            config[default_key] = update_dict_recursive(foo, default_value)  # type: ignore
-        else:
-            if reset:
-                config[default_key] = default_value
-            else:
-                config[default_key] = config.get(default_key, default_value)
-    return config
-
-
-def load_config(json_name: str, reset: bool = False) -> config_type_dict_rec:
-    config: config_type_dict_rec
-    try:
-        with open(json_name, mode='r') as file:
-            config = json.loads(file.read())
-    except FileNotFoundError:
-        config = {}
-
-    default: config_type_dict_rec = {
-        "off_power": 0,
-        "max_idle_power": 5,
-        "min_idle_minutes": 20,
-        "min_idle_count": 5,
-        "min_done_count": 4,
-        "stats": {
-            "skipped_print_count": 0,
-            "on": {
-                "last_sent": datetime.datetime.min.isoformat(),
-                "power_total": 0
-            },
-            "off": {
-                "last_sent": datetime.datetime.min.isoformat(),
-                "power_total": 0
-            },
-            "done": {
-                "last_sent": datetime.datetime.min.isoformat(),
-                "power_total": 0
-            },
-        }
-    }
-
-    config = update_dict_recursive(config, default, reset)
-    return config
-
-
-def save_config(json_name: str, config: Dict) -> None:
-    # print(config)
-    with open(json_name, mode='w') as file:
-        dump = json.dumps(config, indent=4)
-        file.write(dump)
+            config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+    return sending_message
 
 
 def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_reset_stats: bool = False) -> None:
@@ -325,13 +386,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     if mock_run_offset_from_end > 0:
         json_name = csv_log_name.replace(".csv", ".mock_run.json")
 
-    config = load_config(json_name, mock_reset_stats)
-
-    min_off_power    = config["off_power"]         # noqa: E221
-    max_idle_power   = config["max_idle_power"]    # noqa: E221
-    min_idle_minutes = config["min_idle_minutes"]  # noqa: E221
-    min_idle_count   = config["min_idle_count"]    # noqa: E221
-    min_done_count   = config["min_done_count"]    # noqa: E221
+    config_obj = Config(json_name, mock_reset_stats)
 
     done_count = 0
     off_count = 0
@@ -345,40 +400,36 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         time_min = min(time_min or time, time)
 
         delta = time_max - time_min
-        idle_delta = datetime.timedelta(minutes=min_idle_minutes)
+        idle_delta = datetime.timedelta(minutes=config_obj.min_data_window_minutes)
         # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
-        if count > min_idle_count and delta > idle_delta:
+        if count > config_obj.min_idle_count and delta > idle_delta:
             break
 
         last_total_power = line[header.index("Total")]
-        if min_off_power < power <= max_idle_power:
+        if config_obj.min_off_power < power <= config_obj.max_idle_power:
             done_count += 1
-        if power <= min_off_power:
+        if power <= config_obj.min_off_power:
             off_count += 1
         # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
 
-    stats_time_on   = datetime.datetime.fromisoformat(config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-    stats_time_off  = datetime.datetime.fromisoformat(config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-    stats_time_done = datetime.datetime.fromisoformat(config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-
-    delta_last_any = time_max - max(stats_time_on, stats_time_off, stats_time_done)
-    if delta_last_any < datetime.timedelta(minutes=min_idle_minutes * 1.1):
-        config["stats"]["skipped_print_count"] = config["stats"].get("skipped_print_count", 0) + 1
+    delta_last_any = time_max - max(config_obj.last_power_on_time, config_obj.last_power_off_time, config_obj.last_done_time)
+    if delta_last_any < datetime.timedelta(minutes=config_obj.min_runtime_minutes):
+        config_obj.increase_skipped_count()
     else:
-        config["stats"]["skipped_print_count"] = 0
+        config_obj.reset_skipped_count()
 
     sent_on = sent_off = sent_done = False
-    if config["stats"]["skipped_print_count"] < min_done_count:
-        if off_count >= min_done_count - 1 and float(lines[-1][header.index("Power")]) > min_off_power:
-            config, sent_on = print_on(config, stats_time_on, stats_time_off, stats_time_done, time_max, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+    if config_obj.skipped_count < config_obj.min_done_count:
+        if off_count >= config_obj.min_done_count - 1 and float(lines[-1][header.index("Power")]) > config_obj.min_off_power:
+            sent_on = print_on(config_obj, time_max, csv_log_name, lines, header, mock_run_offset_from_end > 0)
 
-        if off_count >= min_done_count:
-            config, sent_off = print_off(config, stats_time_on, stats_time_off, stats_time_done, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+        if off_count >= config_obj.min_done_count:
+            sent_off = print_off(config_obj, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
 
-        if done_count >= min_done_count:
-            config, sent_done = print_done(config, stats_time_on, stats_time_off, stats_time_done, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+        if done_count >= config_obj.min_done_count:
+            sent_done = print_done(config_obj, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
 
-    save_config(json_name, config)
+    config_obj.save_config(json_name)
 
     # eprint(f"{len(lines)=}")
     if mock_reset_stats:
