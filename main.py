@@ -287,16 +287,18 @@ def print_done(
     suppress_message: bool,
 ) -> bool:
     eprint("Done")
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    comparable_time = max(config.last_done_time, last_sent_time)
     if (
-        config.last_power_on_time + config.min_data_window > config.last_done_time
+        config.last_power_on_time + config.min_data_window > comparable_time
         or
-        config.last_power_off_time + config.min_data_window > config.last_done_time
+        config.last_power_off_time + config.min_data_window > comparable_time
         or
         config.last_done_time.year == 1  # done is missing
     ):
         config.config["stats"]["done"]["time"] = min_time.isoformat()
         config.config["stats"]["done"]["power_total"] = last_total_power
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
 
     sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
     if sending_message:
@@ -330,7 +332,7 @@ def print_off(
     last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
 
     comparable_time = max(config.last_power_off_time, last_sent_time)
-    eprint(f"{config.last_power_off_time=}, {last_sent_time=}, {comparable_time=}")
+    # eprint(f"{config.last_power_off_time=}, {last_sent_time=}, {comparable_time=}")
     if (
         config.last_power_on_time + config.min_data_window > comparable_time
         or
@@ -366,16 +368,18 @@ def print_on(
     suppress_message: bool,
 ) -> bool:
     eprint("On")
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    comparable_time = max(config.last_power_on_time, last_sent_time)
     if (
-        config.last_power_off_time > config.last_power_on_time
+        config.last_power_off_time > comparable_time
         or
-        config.last_done_time > config.last_power_on_time
+        config.last_done_time > comparable_time
         or
         config.last_power_on_time.year == 1
     ):
         config.config["stats"]["on"]["time"] = max_time.isoformat()
         config.config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
 
     sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
     if sending_message:
