@@ -52,11 +52,12 @@ class Config():
 
     def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
         self.config = {}
-        self.load_config(json_name, reset)
+        self.load_config(reset)
+        self.json_name = json_name
 
-    def load_config(self: 'Config', json_name: str, reset: bool = False) -> None:
+    def load_config(self: 'Config', reset: bool = False) -> None:
         try:
-            with open(json_name, mode='r') as file:
+            with open(self.json_name, mode='r') as file:
                 self.config = json.loads(file.read())
         except FileNotFoundError:
             pass
@@ -99,7 +100,7 @@ class Config():
         self.last_done_time       = datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
         self.min_data_window      = datetime.timedelta(minutes=self.min_data_window_minutes)  # noqa E221
 
-    def save_config(self: 'Config', json_name: str) -> None:
+    def save_config(self: 'Config') -> None:
         self.config["off_power"              ] = self.min_off_power            # noqa: E221, E202
         self.config["max_idle_power"         ] = self.max_idle_power           # noqa: E221, E202
         self.config["min_data_window_minutes"] = self.min_data_window_minutes  # noqa: E221, E202
@@ -116,7 +117,7 @@ class Config():
             if key in self.config:
                 del self.config[key]
 
-        with open(json_name, mode='w') as file:
+        with open(self.json_name, mode='w') as file:
             dump = json.dumps(self.config, indent=4)
             file.write(dump)
 
@@ -309,6 +310,8 @@ def print_done(
                 config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
             config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+    config.save_config()
+    config.load_config()
     return sending_message
 
 
@@ -339,6 +342,9 @@ def print_off(
                 config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
             config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+    config.save_config()
+    config.load_config()
+
     return sending_message
 
 
@@ -370,6 +376,8 @@ def print_on(
                 config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
         else:
             config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+    config.save_config()
+    config.load_config()
     return sending_message
 
 
@@ -429,7 +437,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         if done_count >= config_obj.min_done_count:
             sent_done = print_done(config_obj, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
 
-    config_obj.save_config(json_name)
+    config_obj.save_config()
 
     # eprint(f"{len(lines)=}")
     if mock_reset_stats:
