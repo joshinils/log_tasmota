@@ -334,6 +334,8 @@ def print_off(
         or
         config.last_power_off_time.year == 1
     ):
+        eprint(f"{config.last_power_on_time=}, {config.last_done_time=}, {config.last_power_off_time=}")
+        eprint(f"{config.last_power_on_time + config.min_data_window=}, {config.last_done_time + config.min_data_window=}, {config.last_power_off_time.year=}")
         config.config["stats"]["off"]["time"] = min_time.isoformat()
         config.config["stats"]["off"]["power_total"] = last_total_power
     last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
