@@ -18,7 +18,7 @@ fi
 
 
 if ! screen -list | grep -q "tasmota_log"; then
-    screen -dm -S tasmota_log /usr/bin/zsh -c "./main.py"
+    screen -dm -S tasmota_log /usr/bin/zsh -c "./main.py 2>&1 | tee -a log.log"
 fi
 
 
