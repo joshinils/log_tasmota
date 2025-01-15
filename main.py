@@ -53,7 +53,6 @@ class Config():
     min_data_window_minutes: float
     min_idle_count: int
     min_done_count: int
-    min_runtime_minutes: float
 
     re_remind: bool
     re_remind_counter: int
@@ -62,6 +61,7 @@ class Config():
     last_power_off_time: datetime.datetime = datetime.datetime.min
     last_done_time: datetime.datetime = datetime.datetime.min
     min_data_window: datetime.timedelta
+    min_runtime: datetime.timedelta
 
     def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
         self.config = {}
@@ -108,7 +108,6 @@ class Config():
         self.min_data_window_minutes = float(self.config["min_data_window_minutes"])  # noqa: E221
         self.min_idle_count          = int(self.config["min_idle_count"])           # noqa: E221
         self.min_done_count          = int(self.config["min_done_count"])           # noqa: E221
-        self.min_runtime_minutes     = float(self.config["min_runtime_minutes"])      # noqa: E221
 
         self.re_remind = bool(self.config["re_remind"])
         self.re_remind_counter = int(self.config["re_remind_counter"])
@@ -116,15 +115,16 @@ class Config():
         self.last_power_on_time   = datetime.datetime.fromisoformat(self.config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
         self.last_power_off_time  = datetime.datetime.fromisoformat(self.config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
         self.last_done_time       = datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-        self.min_data_window      = datetime.timedelta(minutes=self.min_data_window_minutes)  # noqa E221
+        self.min_data_window      = datetime.timedelta(minutes=self.min_data_window_minutes)        # noqa E221
+        self.min_runtime          = datetime.timedelta(minutes=self.config["min_runtime_minutes"])  # noqa E221
 
     def save_config(self: 'Config') -> None:
-        self.config["off_power"              ] = self.min_off_power            # noqa: E221, E202
-        self.config["max_idle_power"         ] = self.max_idle_power           # noqa: E221, E202
-        self.config["min_data_window_minutes"] = self.min_data_window_minutes  # noqa: E221, E202
-        self.config["min_idle_count"         ] = self.min_idle_count           # noqa: E221, E202
-        self.config["min_done_count"         ] = self.min_done_count           # noqa: E221, E202
-        self.config["min_runtime_minutes"    ] = self.min_runtime_minutes      # noqa: E221, E202
+        self.config["off_power"              ] = self.min_off_power                     # noqa: E221, E202
+        self.config["max_idle_power"         ] = self.max_idle_power                    # noqa: E221, E202
+        self.config["min_data_window_minutes"] = self.min_data_window_minutes           # noqa: E221, E202
+        self.config["min_idle_count"         ] = self.min_idle_count                    # noqa: E221, E202
+        self.config["min_done_count"         ] = self.min_done_count                    # noqa: E221, E202
+        self.config["min_runtime_minutes"    ] = self.min_runtime.total_seconds() / 60  # noqa: E221, E202
 
         self.config["re_remind"             ] = self.re_remind                 # noqa: E221, E202
         self.config["re_remind_counter"     ] = self.re_remind_counter         # noqa: E221, E202
@@ -429,16 +429,18 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
 
     done_count = 0
     off_count = 0
-    time_min = datetime.datetime.max
-    time_max = datetime.datetime.min
+    time_earliest = datetime.datetime.max
+    time_latest = datetime.datetime.min
     last_total_power = "0"
+    power_lst = []
     for count, line in enumerate(lines[::-1]):
         power = float(line[header.index("Power")])
+        power_lst += [power]
         time = datetime.datetime.fromisoformat(line[header.index("Time")])
-        time_max = max(time_max or time, time)
-        time_min = min(time_min or time, time)
+        time_latest = max(time_latest or time, time)
+        time_earliest = min(time_earliest or time, time)
 
-        delta = time_max - time_min
+        delta = time_latest - time_earliest
         idle_delta = datetime.timedelta(minutes=config.min_data_window_minutes)
         # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
         if count > config.min_idle_count and delta > idle_delta:
@@ -451,8 +453,20 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
             off_count += 1
         # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
 
-    delta_last_any = time_max - max(config.last_power_on_time, config.last_power_off_time, config.last_done_time)
-    if delta_last_any < datetime.timedelta(minutes=config.min_runtime_minutes):
+    min_power = min(power_lst)
+    max_power = max(power_lst)
+    mean_power = statistics.mean(power_lst)
+    median_power = statistics.median(power_lst)
+
+    eprint(csv_log_name, f"{power_lst=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}")
+
+    if (
+        # time_latest - config.last_power_on_time < config.min_runtime
+        # or
+        time_latest - config.last_power_off_time < config.min_runtime
+        or
+        time_latest - config.last_done_time < config.min_runtime
+    ):
         config.increase_skipped_count()
     else:
         config.reset_skipped_count()
@@ -463,19 +477,19 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         eprint(csv_log_name, f"{off_count >= config.min_done_count - 1 and float(lines[-1][header.index('Power')]) > config.min_off_power=}, {off_count=} >= {config.min_done_count - 1=} and {float(lines[-1][header.index('Power')])=} > {config.min_off_power=}")
         if off_count >= config.min_done_count - 1 and float(lines[-1][header.index("Power")]) > config.min_off_power:
             eprint(csv_log_name, "calling print_on")
-            sent_on = print_on(config, time_max, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+            sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_on: {sent_on=}")
 
         eprint(csv_log_name, f"{off_count >= config.min_done_count=}, {off_count=} >= {config.min_done_count=}")
         if off_count >= config.min_done_count:
             eprint(csv_log_name, "calling print_off")
-            sent_off = print_off(config, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+            sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_off: {sent_off=}")
 
         eprint(csv_log_name, f"{done_count >= config.min_done_count=}, {done_count=} >= {config.min_done_count=}")
         if done_count >= config.min_done_count:
             eprint(csv_log_name, "calling print_done")
-            sent_done = print_done(config, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+            sent_done = print_done(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_done: {sent_done=}")
 
     config.save_config()
