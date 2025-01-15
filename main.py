@@ -5,6 +5,7 @@ import datetime
 import inspect
 import json
 import math
+import statistics
 import sys
 import time
 from numbers import Number
@@ -424,7 +425,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     if mock_run_offset_from_end > 0:
         json_name = csv_log_name.replace(".csv", ".mock_run.json")
 
-    config_obj = Config(json_name, mock_reset_stats)
+    config = Config(json_name, mock_reset_stats)
 
     done_count = 0
     off_count = 0
@@ -438,46 +439,46 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         time_min = min(time_min or time, time)
 
         delta = time_max - time_min
-        idle_delta = datetime.timedelta(minutes=config_obj.min_data_window_minutes)
+        idle_delta = datetime.timedelta(minutes=config.min_data_window_minutes)
         # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
-        if count > config_obj.min_idle_count and delta > idle_delta:
+        if count > config.min_idle_count and delta > idle_delta:
             break
 
         last_total_power = line[header.index("Total")]
-        if config_obj.min_off_power < power <= config_obj.max_idle_power:
+        if config.min_off_power < power <= config.max_idle_power:
             done_count += 1
-        if power <= config_obj.min_off_power:
+        if power <= config.min_off_power:
             off_count += 1
         # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
 
-    delta_last_any = time_max - max(config_obj.last_power_on_time, config_obj.last_power_off_time, config_obj.last_done_time)
-    if delta_last_any < datetime.timedelta(minutes=config_obj.min_runtime_minutes):
-        config_obj.increase_skipped_count()
+    delta_last_any = time_max - max(config.last_power_on_time, config.last_power_off_time, config.last_done_time)
+    if delta_last_any < datetime.timedelta(minutes=config.min_runtime_minutes):
+        config.increase_skipped_count()
     else:
-        config_obj.reset_skipped_count()
+        config.reset_skipped_count()
 
     sent_on = sent_off = sent_done = False
-    eprint(csv_log_name, f"{config_obj.skipped_count < config_obj.min_done_count=}, {config_obj.skipped_count=} < {config_obj.min_done_count=}")
-    if config_obj.skipped_count < config_obj.min_done_count:
-        eprint(csv_log_name, f"{off_count >= config_obj.min_done_count - 1 and float(lines[-1][header.index('Power')]) > config_obj.min_off_power=}, {off_count=} >= {config_obj.min_done_count - 1=} and {float(lines[-1][header.index('Power')])=} > {config_obj.min_off_power=}")
-        if off_count >= config_obj.min_done_count - 1 and float(lines[-1][header.index("Power")]) > config_obj.min_off_power:
+    eprint(csv_log_name, f"{config.skipped_count < config.min_done_count=}, {config.skipped_count=} < {config.min_done_count=}")
+    if config.skipped_count < config.min_done_count:
+        eprint(csv_log_name, f"{off_count >= config.min_done_count - 1 and float(lines[-1][header.index('Power')]) > config.min_off_power=}, {off_count=} >= {config.min_done_count - 1=} and {float(lines[-1][header.index('Power')])=} > {config.min_off_power=}")
+        if off_count >= config.min_done_count - 1 and float(lines[-1][header.index("Power")]) > config.min_off_power:
             eprint(csv_log_name, "calling print_on")
-            sent_on = print_on(config_obj, time_max, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+            sent_on = print_on(config, time_max, csv_log_name, lines, header, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_on: {sent_on=}")
 
-        eprint(csv_log_name, f"{off_count >= config_obj.min_done_count=}, {off_count=} >= {config_obj.min_done_count=}")
-        if off_count >= config_obj.min_done_count:
+        eprint(csv_log_name, f"{off_count >= config.min_done_count=}, {off_count=} >= {config.min_done_count=}")
+        if off_count >= config.min_done_count:
             eprint(csv_log_name, "calling print_off")
-            sent_off = print_off(config_obj, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+            sent_off = print_off(config, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_off: {sent_off=}")
 
-        eprint(csv_log_name, f"{done_count >= config_obj.min_done_count=}, {done_count=} >= {config_obj.min_done_count=}")
-        if done_count >= config_obj.min_done_count:
+        eprint(csv_log_name, f"{done_count >= config.min_done_count=}, {done_count=} >= {config.min_done_count=}")
+        if done_count >= config.min_done_count:
             eprint(csv_log_name, "calling print_done")
-            sent_done = print_done(config_obj, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+            sent_done = print_done(config, time_min, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
             eprint(csv_log_name, f"        print_done: {sent_done=}")
 
-    config_obj.save_config()
+    config.save_config()
 
     # eprint(f"{len(lines)=}")
     if mock_reset_stats:
@@ -536,7 +537,7 @@ def main() -> None:
             do_once(ip, debug)
             end = time.time()
             eprint(ip, end - total_start, end - start)
-            print()
+            eprint()
         if i < 60:
             time.sleep(i - (end - total_start))
 
