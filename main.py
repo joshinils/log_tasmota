@@ -411,7 +411,16 @@ def print_done(
     else:
         eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
 
+    # region re_remind
+    if config.re_remind:
+        n_th_fib = fib(config.re_remind_counter)
+        fib_delta = datetime.timedelta(minutes=n_th_fib)
+        time_since_done = current_done_time - config.stats_done_time
+        eprint(f"{time_since_done=}, {fib_delta=}")
+    # endregion re_remind
+
     if last_on_or_off <= config.stats_done_last_sent:
+        # if not config.re_remind:
         eprint("do not re-send done message")
         return False
 
@@ -426,19 +435,10 @@ def print_done(
     else:
         eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}")
 
-    # region re_remind
-    if config.re_remind:
-        n_th_fib = fib(config.re_remind_counter)
-        fib_delta = datetime.timedelta(minutes=n_th_fib)
-        time_since_done = current_done_time - config.stats_done_time
-        eprint(f"{time_since_done=}, {fib_delta=}")
-    # endregion re_remind
-
-    power_used = float(config.stats_done_power_total) - float(config.stats_on_power_total)
-
-    time_used = config.stats_done_time - config.stats_power_on_time
-
     if suppress_message is False:
+        power_used = float(config.stats_done_power_total) - float(config.stats_on_power_total)
+        time_used = config.stats_done_time - config.stats_power_on_time
+
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
         if result.get("ok"):
             config.stats_done_last_sent = datetime.datetime.now()
