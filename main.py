@@ -323,10 +323,10 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
     else:
         send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}&disable_notification={disable_notification}'
 
-    print(f"{send_text=}")
+    eprint(f"{send_text=}")
     response = requests.get(send_text)
     response_json: Dict = response.json()
-    print(type(response), response_json)
+    eprint(type(response), response_json)
     return response_json
 
 
@@ -348,7 +348,15 @@ def print_done(
 ) -> bool:
     eprint("Done")
     last_on_or_off = max(config.last_power_on_time, config.last_power_off_time)
-    if current_done_time - last_on_or_off < config.min_data_window:
+    if current_done_time - last_on_or_off < config.min_runtime:
+        eprint("too short")
+        return False
+    else:
+        eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
+
+    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+    if last_on_or_off <= previous_sent_time:
+        eprint("do not re-send done message")
         return False
 
     config.config["stats"]["done"]["time"] = current_done_time.isoformat()
@@ -358,7 +366,10 @@ def print_done(
     sending_message = last_sent_time.year == 1 or last_sent_time < config.last_done_time
 
     if not sending_message:
+        eprint("already sent")
         return False
+    else:
+        eprint(f"{last_sent_time=} < {config.last_done_time=}")
 
     power_done = config.config["stats"]["done"]["power_total"]
     power_start = config.config["stats"]["on"].get("power_total", 0)
@@ -387,7 +398,12 @@ def print_off(
 ) -> bool:
     eprint("Off")
     last_on_or_done = max(config.last_power_on_time, config.last_done_time)
-    if current_power_off_time - last_on_or_done < config.min_data_window:
+    if current_power_off_time - last_on_or_done < config.min_runtime:
+        return False
+
+    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+    if last_on_or_done <= previous_sent_time:
+        eprint("do not re-send off message")
         return False
 
     config.config["stats"]["off"]["time"] = current_power_off_time.isoformat()
@@ -421,6 +437,11 @@ def print_on(
 
     if previous_sent_time >= current_power_on_time:
         eprint("already sent for current on-event")
+        return False
+
+    last_off_or_done = max(config.last_power_off_time, config.last_done_time)
+    if last_off_or_done <= previous_sent_time:
+        eprint("do not re-send on message")
         return False
 
     config.config["stats"]["on"]["time"] = current_power_on_time.isoformat()
@@ -522,7 +543,7 @@ def do_once(ipv4: str, debug: bool = False) -> None:
             length_of_log = len(f.readlines())
 
         if length_of_log:
-            print(f"debugging ip {ipv4=} with {file_name=}")
+            eprint(f"debugging ip {ipv4=} with {file_name=}")
             for offset_from_end in tqdm.tqdm(range(length_of_log - 1, -1, -1), dynamic_ncols=True):
                 # print()
                 # eprint(f"{offset_from_end=}")
@@ -549,6 +570,7 @@ def main() -> None:
     for i in range(10, 61, 10):
         for ip in ips:
             start = time.time()
+            print()
             do_once(ip, debug)
             end = time.time()
             eprint(ip, end - total_start, end - start)
