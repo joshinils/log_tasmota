@@ -300,8 +300,8 @@ tasmota_thread_id = "4061"
 
 def print_done(
     config: Config,
-    min_time: datetime.datetime,
-    last_total_power: str,
+    current_done_time: datetime.datetime,
+    latest_total_power: str,
     csv_log_name: str,
     suppress_message: bool,
 ) -> bool:
@@ -309,107 +309,103 @@ def print_done(
     last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
 
     comparable_time = max(config.last_done_time, last_sent_time)
-    if (
-        config.last_power_on_time + config.min_data_window > comparable_time
-        or
-        config.last_power_off_time + config.min_data_window > comparable_time
-        or
-        config.last_done_time.year == 1  # done is missing
-    ):
-        config.config["stats"]["done"]["time"] = min_time.isoformat()
-        config.config["stats"]["done"]["power_total"] = last_total_power
+    last_on_or_off = max(config.last_power_on_time, config.last_power_off_time)
+
+    if comparable_time - last_on_or_off < config.min_data_window:
+        return False
+
+    config.config["stats"]["done"]["time"] = current_done_time.isoformat()
+    config.config["stats"]["done"]["power_total"] = latest_total_power
 
     sending_message = last_sent_time.year == 1 or last_sent_time < config.last_done_time
-    if sending_message:
-        power_done = config.config["stats"]["done"]["power_total"]
-        power_start = config.config["stats"]["on"].get("power_total", 0)
-        power_used = float(power_done) - float(power_start)
 
-        time_on = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-        time_done = datetime.datetime.fromisoformat(config.config["stats"]["done"]["time"])
-        time_used = time_done - time_on
+    if not sending_message:
+        return False
 
-        if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
-            if result.get("ok"):
-                config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
-        else:
+    power_done = config.config["stats"]["done"]["power_total"]
+    power_start = config.config["stats"]["on"].get("power_total", 0)
+    power_used = float(power_done) - float(power_start)
+
+    time_on = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+    time_done = datetime.datetime.fromisoformat(config.config["stats"]["done"]["time"])
+    time_used = time_done - time_on
+
+    if suppress_message is False:
+        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+        if result.get("ok"):
             config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
-    # config.save_config()
-    # config.load_config()
-    return sending_message
+    else:
+        config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+
+    return True
 
 
 def print_off(
     config: Config,
-    min_time: datetime.datetime,
-    last_total_power: str,
+    current_power_off_time: datetime.datetime,
+    latest_total_power: str,
     csv_log_name: str,
     suppress_message: bool,
 ) -> bool:
     eprint("Off")
     last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+    last_off_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
 
     comparable_time = max(config.last_power_off_time, last_sent_time)
-    # eprint(f"{config.last_power_off_time=}, {last_sent_time=}, {comparable_time=}")
-    if (
-        config.last_power_on_time + config.min_data_window > comparable_time
-        or
-        config.last_done_time + config.min_data_window > comparable_time
-        or
-        config.last_power_off_time.year == 1
-    ):
-        eprint(f"{config.last_power_on_time=}, {config.last_done_time=}, {config.last_power_off_time=}")
-        eprint(f"{config.last_power_on_time + config.min_data_window=}, {config.last_done_time + config.min_data_window=}, {config.last_power_off_time.year=}")
-        config.config["stats"]["off"]["time"] = min_time.isoformat()
-        config.config["stats"]["off"]["power_total"] = last_total_power
+    last_on_or_done = max(config.last_power_on_time, config.last_done_time)
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
-    if sending_message:
-        if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
-            if result.get("ok"):
-                config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
-        else:
+    if comparable_time - last_on_or_done < config.min_data_window:
+        return False
+
+    config.config["stats"]["off"]["time"] = current_power_off_time.isoformat()
+    config.config["stats"]["off"]["power_total"] = latest_total_power
+
+    sending_message = last_sent_time.year == 1 or last_sent_time < last_off_time
+    if not sending_message:
+        return False
+
+    if suppress_message is False:
+        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
+        if result.get("ok"):
             config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
-    # config.save_config()
-    # config.load_config()
-    return sending_message
+    else:
+        config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+
+    return True
 
 
 def print_on(
     config: Config,
-    max_time: datetime.datetime,
+    current_power_on_time: datetime.datetime,
     csv_log_name: str,
     lines: List[List[str]],
     header: List[str],
     suppress_message: bool,
 ) -> bool:
     eprint("On")
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
 
-    comparable_time = max(config.last_power_on_time, last_sent_time)
-    if (
-        config.last_power_off_time > comparable_time
-        or
-        config.last_done_time > comparable_time
-        or
-        config.last_power_on_time.year == 1
-    ):
-        config.config["stats"]["on"]["time"] = max_time.isoformat()
-        config.config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+    comparable_time = max(config.last_power_on_time, previous_sent_time)
+    last_off_or_done_time = min(config.last_power_off_time, config.last_done_time)
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-    if sending_message:
-        if suppress_message is False:
-            result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
-            if result.get("ok"):
-                config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
-        else:
+    if last_off_or_done_time > comparable_time:
+        return False
+
+    if previous_sent_time >= current_power_on_time:
+        # already sent for current on-event
+        return False
+
+    config.config["stats"]["on"]["time"] = current_power_on_time.isoformat()
+    config.config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+
+    if suppress_message is False:
+        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
+        if result.get("ok"):
             config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
-    # config.save_config()
-    # config.load_config()
-    return sending_message
+    else:
+        config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+
+    return True
 
 
 def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_reset_stats: bool = False) -> None:
@@ -432,10 +428,10 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     time_earliest = datetime.datetime.max
     time_latest = datetime.datetime.min
     last_total_power = "0"
-    power_lst = []
+    power_list = []
     for count, line in enumerate(lines[::-1]):
         power = float(line[header.index("Power")])
-        power_lst += [power]
+        power_list += [power]
         time = datetime.datetime.fromisoformat(line[header.index("Time")])
         time_latest = max(time_latest or time, time)
         time_earliest = min(time_earliest or time, time)
@@ -453,44 +449,22 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
             off_count += 1
         # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
 
-    min_power = min(power_lst)
-    max_power = max(power_lst)
-    mean_power = statistics.mean(power_lst)
-    median_power = statistics.median(power_lst)
+    power_list = power_list[::-1]  # reverse back
 
-    eprint(csv_log_name, f"{power_lst=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}")
+    min_power = min(power_list)
+    median_power = statistics.median(power_list)
+    mean_power = statistics.mean(power_list)
+    max_power = max(power_list)
 
-    if (
-        # time_latest - config.last_power_on_time < config.min_runtime
-        # or
-        time_latest - config.last_power_off_time < config.min_runtime
-        or
-        time_latest - config.last_done_time < config.min_runtime
-    ):
-        config.increase_skipped_count()
-    else:
-        config.reset_skipped_count()
+    eprint(csv_log_name, f"{power_list=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}")
 
     sent_on = sent_off = sent_done = False
-    eprint(csv_log_name, f"{config.skipped_count < config.min_done_count=}, {config.skipped_count=} < {config.min_done_count=}")
-    if config.skipped_count < config.min_done_count:
-        eprint(csv_log_name, f"{off_count >= config.min_done_count - 1 and float(lines[-1][header.index('Power')]) > config.min_off_power=}, {off_count=} >= {config.min_done_count - 1=} and {float(lines[-1][header.index('Power')])=} > {config.min_off_power=}")
-        if off_count >= config.min_done_count - 1 and float(lines[-1][header.index("Power")]) > config.min_off_power:
-            eprint(csv_log_name, "calling print_on")
-            sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
-            eprint(csv_log_name, f"        print_on: {sent_on=}")
-
-        eprint(csv_log_name, f"{off_count >= config.min_done_count=}, {off_count=} >= {config.min_done_count=}")
-        if off_count >= config.min_done_count:
-            eprint(csv_log_name, "calling print_off")
-            sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
-            eprint(csv_log_name, f"        print_off: {sent_off=}")
-
-        eprint(csv_log_name, f"{done_count >= config.min_done_count=}, {done_count=} >= {config.min_done_count=}")
-        if done_count >= config.min_done_count:
-            eprint(csv_log_name, "calling print_done")
-            sent_done = print_done(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
-            eprint(csv_log_name, f"        print_done: {sent_done=}")
+    if all(power <= config.min_off_power for power in power_list[:-1]) and power_list[-1] >= config.max_idle_power:
+        sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+    elif median_power <= config.min_off_power:
+        sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+    elif config.min_off_power <= median_power <= config.max_idle_power:
+        sent_done = print_done(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
 
     config.save_config()
 
