@@ -97,29 +97,83 @@ class Config():
     def re_remind_counter(self: 'Config', value: int) -> None:
         self.config["re_remind_counter"] = value
 
+    # region on
     @property
-    def last_power_on_time(self: 'Config') -> datetime.datetime:
+    def stats_power_on_time(self: 'Config') -> datetime.datetime:
         return datetime.datetime.fromisoformat(self.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
 
-    @last_power_on_time.setter
-    def last_power_on_time(self: 'Config', value: datetime.datetime) -> None:
+    @stats_power_on_time.setter
+    def stats_power_on_time(self: 'Config', value: datetime.datetime) -> None:
         self.config["stats"]["on"]["time"] = value.isoformat()
 
     @property
-    def last_power_off_time(self: 'Config') -> datetime.datetime:
+    def stats_power_on_last_sent(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    @stats_power_on_last_sent.setter
+    def stats_power_on_last_sent(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["on"]["last_sent"] = value.isoformat()
+
+    @property
+    def stats_on_power_total(self: 'Config') -> float:
+        return float(self.config["stats"]["on"].get("power_total", 0))
+
+    @stats_on_power_total.setter
+    def stats_on_power_total(self: 'Config', value: float) -> None:
+        self.config["stats"]["on"]["power_total"] = value
+    # endregion on
+
+    # region off
+    @property
+    def stats_power_off_time(self: 'Config') -> datetime.datetime:
         return datetime.datetime.fromisoformat(self.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
 
-    @last_power_off_time.setter
-    def last_power_off_time(self: 'Config', value: datetime.datetime) -> None:
+    @stats_power_off_time.setter
+    def stats_power_off_time(self: 'Config', value: datetime.datetime) -> None:
         self.config["stats"]["off"]["time"] = value.isoformat()
 
     @property
-    def last_done_time(self: 'Config') -> datetime.datetime:
+    def stats_power_off_last_sent(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    @stats_power_off_last_sent.setter
+    def stats_power_off_last_sent(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["off"]["last_sent"] = value.isoformat()
+
+    @property
+    def stats_off_power_total(self: 'Config') -> float:
+        return float(self.config["stats"]["off"].get("power_total", 0))
+
+    @stats_off_power_total.setter
+    def stats_off_power_total(self: 'Config', value: float) -> None:
+        self.config["stats"]["off"]["power_total"] = value
+    # endregion off
+
+    # region done
+    @property
+    def stats_done_time(self: 'Config') -> datetime.datetime:
         return datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
 
-    @last_done_time.setter
-    def last_done_time(self: 'Config', value: datetime.datetime) -> None:
+    @stats_done_time.setter
+    def stats_done_time(self: 'Config', value: datetime.datetime) -> None:
         self.config["stats"]["done"]["time"] = value.isoformat()
+
+    @property
+    def stats_done_last_sent(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    @stats_done_last_sent.setter
+    def stats_done_last_sent(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["done"]["last_sent"] = value.isoformat()
+
+    @property
+    def stats_done_power_total(self: 'Config') -> float:
+        return float(self.config["stats"]["done"].get("power_total", 0))
+
+    @stats_done_power_total.setter
+    def stats_done_power_total(self: 'Config', value: float) -> None:
+        self.config["stats"]["done"]["power_total"] = value
+    # endregion done
 
     @property
     def min_data_window(self: 'Config') -> datetime.timedelta:
@@ -160,16 +214,19 @@ class Config():
             "re_remind_counter": 0,
             "stats": {
                 "on": {
+                    "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0
+                    "power_total": 0.0
                 },
                 "off": {
+                    "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0
+                    "power_total": 0.0
                 },
                 "done": {
+                    "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0
+                    "power_total": 0.0
                 },
             }
         }
@@ -342,49 +399,51 @@ tasmota_thread_id = "4061"
 def print_done(
     config: Config,
     current_done_time: datetime.datetime,
-    latest_total_power: str,
+    latest_total_power: float,
     csv_log_name: str,
     suppress_message: bool,
 ) -> bool:
     eprint("Done")
-    last_on_or_off = max(config.last_power_on_time, config.last_power_off_time)
+    last_on_or_off = max(config.stats_power_on_time, config.stats_power_off_time)
     if current_done_time - last_on_or_off < config.min_runtime:
         eprint("too short")
         return False
     else:
         eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
 
-    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
-    if last_on_or_off <= previous_sent_time:
+    if last_on_or_off <= config.stats_done_last_sent:
         eprint("do not re-send done message")
         return False
 
-    config.config["stats"]["done"]["time"] = current_done_time.isoformat()
-    config.config["stats"]["done"]["power_total"] = latest_total_power
+    config.stats_done_time = current_done_time
+    config.stats_done_power_total = latest_total_power
 
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
-    sending_message = last_sent_time.year == 1 or last_sent_time < config.last_done_time
+    sending_message = config.stats_done_last_sent.year == 1 or config.stats_done_last_sent < config.stats_done_time
 
     if not sending_message:
         eprint("already sent")
         return False
     else:
-        eprint(f"{last_sent_time=} < {config.last_done_time=}")
+        eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}")
 
-    power_done = config.config["stats"]["done"]["power_total"]
-    power_start = config.config["stats"]["on"].get("power_total", 0)
-    power_used = float(power_done) - float(power_start)
+    # region re_remind
+    if config.re_remind:
+        n_th_fib = fib(config.re_remind_counter)
+        fib_delta = datetime.timedelta(minutes=n_th_fib)
+        time_since_done = current_done_time - config.stats_done_time
+        eprint(f"{time_since_done=}, {fib_delta=}")
+    # endregion re_remind
 
-    time_on = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
-    time_done = datetime.datetime.fromisoformat(config.config["stats"]["done"]["time"])
-    time_used = time_done - time_on
+    power_used = float(config.stats_done_power_total) - float(config.stats_on_power_total)
+
+    time_used = config.stats_done_time - config.stats_power_on_time
 
     if suppress_message is False:
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
         if result.get("ok"):
-            config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+            config.stats_done_last_sent = datetime.datetime.now()
     else:
-        config.config["stats"]["done"]["last_sent"] = datetime.datetime.now().isoformat()
+        config.stats_done_last_sent = datetime.datetime.now()
 
     return True
 
@@ -392,34 +451,32 @@ def print_done(
 def print_off(
     config: Config,
     current_power_off_time: datetime.datetime,
-    latest_total_power: str,
+    latest_total_power: float,
     csv_log_name: str,
     suppress_message: bool,
 ) -> bool:
     eprint("Off")
-    last_on_or_done = max(config.last_power_on_time, config.last_done_time)
+    last_on_or_done = max(config.stats_power_on_time, config.stats_done_time)
     if current_power_off_time - last_on_or_done < config.min_runtime:
         return False
 
-    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
-    if last_on_or_done <= previous_sent_time:
+    if last_on_or_done <= config.stats_power_off_last_sent:
         eprint("do not re-send off message")
         return False
 
-    config.config["stats"]["off"]["time"] = current_power_off_time.isoformat()
-    config.config["stats"]["off"]["power_total"] = latest_total_power
+    config.stats_power_off_time = current_power_off_time
+    config.stats_off_power_total = latest_total_power
 
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
-    sending_message = last_sent_time.year == 1 or last_sent_time < config.last_power_off_time
+    sending_message = config.stats_power_off_last_sent.year == 1 or config.stats_power_off_last_sent < config.stats_power_off_time
     if not sending_message:
         return False
 
     if suppress_message is False:
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
         if result.get("ok"):
-            config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+            config.stats_power_off_last_sent = datetime.datetime.now()
     else:
-        config.config["stats"]["off"]["last_sent"] = datetime.datetime.now().isoformat()
+        config.stats_power_off_last_sent = datetime.datetime.now()
 
     return True
 
@@ -433,26 +490,24 @@ def print_on(
     suppress_message: bool,
 ) -> bool:
     eprint("On")
-    previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
-
-    if previous_sent_time >= current_power_on_time:
+    if config.stats_power_on_last_sent >= current_power_on_time:
         eprint("already sent for current on-event")
         return False
 
-    last_off_or_done = max(config.last_power_off_time, config.last_done_time)
-    if last_off_or_done <= previous_sent_time:
+    last_off_or_done = max(config.stats_power_off_time, config.stats_done_time)
+    if last_off_or_done <= config.stats_power_on_last_sent:
         eprint("do not re-send on message")
         return False
 
-    config.config["stats"]["on"]["time"] = current_power_on_time.isoformat()
-    config.config["stats"]["on"]["power_total"] = lines[-1][header.index("Total")]
+    config.stats_power_on_time = current_power_on_time
+    config.stats_on_power_total = float(lines[-1][header.index("Total")])
 
     if suppress_message is False:
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
         if result.get("ok"):
-            config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+            config.stats_power_on_last_sent = datetime.datetime.now()
     else:
-        config.config["stats"]["on"]["last_sent"] = datetime.datetime.now().isoformat()
+        config.stats_power_on_last_sent = datetime.datetime.now()
 
     return True
 
@@ -476,7 +531,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     off_count = 0
     time_earliest = datetime.datetime.max
     time_latest = datetime.datetime.min
-    last_total_power = "0"
+    last_total_power = 0.0
     power_list = []
     for count, line in enumerate(lines[::-1]):
         power = float(line[header.index("Power")])
@@ -490,7 +545,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         if count > config.min_idle_count and delta > config.min_data_window:
             break
 
-        last_total_power = line[header.index("Total")]
+        last_total_power = float(line[header.index("Total")])
         if config.min_off_power < power <= config.max_idle_power:
             done_count += 1
         if power <= config.min_off_power:
