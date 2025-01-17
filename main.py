@@ -412,38 +412,50 @@ def print_done(
         eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
 
     # region re_remind
+    re_remind_now = False
     if config.re_remind:
-        n_th_fib = fib(config.re_remind_counter)
-        fib_delta = datetime.timedelta(minutes=n_th_fib)
-        time_since_done = current_done_time - config.stats_done_time
-        eprint(f"{time_since_done=}, {fib_delta=}")
+        n_th_fib = max(300, fib(config.re_remind_counter))  # minimum 5 minutes, or increas by fibonacci
+        fib_delta = datetime.timedelta(seconds=n_th_fib)
+        time_since_last_sent = current_done_time - config.stats_done_last_sent
+        if time_since_last_sent >= fib_delta:
+            re_remind_now = True
+        eprint(f"{time_since_last_sent=}, {fib_delta=}, {config.re_remind_counter=} {re_remind_now=}")
     # endregion re_remind
 
     if last_on_or_off <= config.stats_done_last_sent:
-        # if not config.re_remind:
-        eprint("do not re-send done message")
-        return False
+        if not re_remind_now:
+            eprint("do not re-send done message")
+            return False
 
-    config.stats_done_time = current_done_time
-    config.stats_done_power_total = latest_total_power
+    if config.re_remind_counter == 0:
+        config.stats_done_time = current_done_time
+        config.stats_done_power_total = latest_total_power
 
-    sending_message = config.stats_done_last_sent.year == 1 or config.stats_done_last_sent < config.stats_done_time
+    sending_message = config.stats_done_last_sent.year == 1 or config.stats_done_last_sent < config.stats_done_time or re_remind_now
 
     if not sending_message:
         eprint("already sent")
         return False
     else:
-        eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}")
+        eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}; {re_remind_now=}")
 
     if suppress_message is False:
-        power_used = float(config.stats_done_power_total) - float(config.stats_on_power_total)
-        time_used = config.stats_done_time - config.stats_power_on_time
+        message = f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig"
+        if re_remind_now:
+            time_since_done = current_done_time - config.stats_done_time
+            message += f" seit {time_since_done}\nErinnerung Nr. {config.re_remind_counter}"
+        else:
+            power_used = float(config.stats_done_power_total) - float(config.stats_on_power_total)
+            time_used = config.stats_done_time - config.stats_power_on_time
+            message += f"\n{power_used:4.2f}kWh verbraucht in {time_used}"
 
-        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig\n{power_used:4.2f}kWh verbraucht in {time_used}", server_mail_id, False, tasmota_thread_id)
+        result = telegram_bot_sendtext(message, server_mail_id, False, tasmota_thread_id)
         if result.get("ok"):
             config.stats_done_last_sent = datetime.datetime.now()
+            config.re_remind_counter += 1
     else:
         config.stats_done_last_sent = datetime.datetime.now()
+        config.re_remind_counter += 1
 
     return True
 
@@ -475,8 +487,10 @@ def print_off(
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
         if result.get("ok"):
             config.stats_power_off_last_sent = datetime.datetime.now()
+            config.re_remind_counter = 0
     else:
         config.stats_power_off_last_sent = datetime.datetime.now()
+        config.re_remind_counter = 0
 
     return True
 
@@ -506,8 +520,10 @@ def print_on(
         result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
         if result.get("ok"):
             config.stats_power_on_last_sent = datetime.datetime.now()
+            config.re_remind_counter = 0
     else:
         config.stats_power_on_last_sent = datetime.datetime.now()
+        config.re_remind_counter = 0
 
     return True
 
