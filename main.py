@@ -48,20 +48,94 @@ class Config():
     json_name: str
 
     config: Dict
-    min_off_power: float
-    max_idle_power: float
-    min_data_window_minutes: float
-    min_idle_count: int
-    min_done_count: int
 
-    re_remind: bool
-    re_remind_counter: int
+    @property
+    def min_off_power(self: 'Config') -> float:
+        return float(self.config["off_power"])
 
-    last_power_on_time: datetime.datetime = datetime.datetime.min
-    last_power_off_time: datetime.datetime = datetime.datetime.min
-    last_done_time: datetime.datetime = datetime.datetime.min
-    min_data_window: datetime.timedelta
-    min_runtime: datetime.timedelta
+    @min_off_power.setter
+    def min_off_power(self: 'Config', value: float) -> None:
+        self.config["off_power"] = value
+
+    @property
+    def max_idle_power(self: 'Config') -> float:
+        return float(self.config["max_idle_power"])
+
+    @max_idle_power.setter
+    def max_idle_power(self: 'Config', value: float) -> None:
+        self.config["max_idle_power"] = value
+
+    @property
+    def min_idle_count(self: 'Config') -> int:
+        return int(self.config["min_idle_count"])
+
+    @min_idle_count.setter
+    def min_idle_count(self: 'Config', value: int) -> None:
+        self.config["min_idle_count"] = value
+
+    @property
+    def min_done_count(self: 'Config') -> int:
+        return int(self.config["min_done_count"])
+
+    @min_done_count.setter
+    def min_done_count(self: 'Config', value: int) -> None:
+        self.config["min_done_count"] = value
+
+    @property
+    def re_remind(self: 'Config') -> bool:
+        return bool(self.config["re_remind"])
+
+    @re_remind.setter
+    def re_remind(self: 'Config', value: bool) -> None:
+        self.config["re_remind"] = value
+
+    @property
+    def re_remind_counter(self: 'Config') -> int:
+        return int(self.config["re_remind_counter"])
+
+    @re_remind_counter.setter
+    def re_remind_counter(self: 'Config', value: int) -> None:
+        self.config["re_remind_counter"] = value
+
+    @property
+    def last_power_on_time(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["on"].get("time", datetime.datetime.min.isoformat()))
+
+    @last_power_on_time.setter
+    def last_power_on_time(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["on"]["time"] = value.isoformat()
+
+    @property
+    def last_power_off_time(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
+
+    @last_power_off_time.setter
+    def last_power_off_time(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["off"]["time"] = value.isoformat()
+
+    @property
+    def last_done_time(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))
+
+    @last_done_time.setter
+    def last_done_time(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["done"]["time"] = value.isoformat()
+
+    @property
+    def min_data_window(self: 'Config') -> datetime.timedelta:
+        return datetime.timedelta(minutes=float(self.config["min_data_window_minutes"]))
+
+    @min_data_window.setter
+    def min_data_window(self: 'Config', value: datetime.timedelta) -> None:
+        self.config["min_data_window_minutes"] = value.total_seconds() / 60
+
+    @property
+    def min_runtime(self: 'Config') -> datetime.timedelta:
+        return datetime.timedelta(minutes=float(self.config["min_runtime_minutes"]))
+
+    @min_runtime.setter
+    def min_runtime(self: 'Config', value: datetime.timedelta) -> None:
+        self.config["min_runtime_minutes"] = value.total_seconds() / 60
 
     def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
         self.config = {}
@@ -85,7 +159,6 @@ class Config():
             "re_remind": False,
             "re_remind_counter": 0,
             "stats": {
-                "skipped_print_count": 0,
                 "on": {
                     "last_sent": datetime.datetime.min.isoformat(),
                     "power_total": 0
@@ -103,54 +176,22 @@ class Config():
 
         self.config = update_dict_recursive(self.config, default, reset)
 
-        self.min_off_power           = float(self.config["off_power"])                # noqa: E221
-        self.max_idle_power          = float(self.config["max_idle_power"])           # noqa: E221
-        self.min_data_window_minutes = float(self.config["min_data_window_minutes"])  # noqa: E221
-        self.min_idle_count          = int(self.config["min_idle_count"])           # noqa: E221
-        self.min_done_count          = int(self.config["min_done_count"])           # noqa: E221
-
-        self.re_remind = bool(self.config["re_remind"])
-        self.re_remind_counter = int(self.config["re_remind_counter"])
-
-        self.last_power_on_time   = datetime.datetime.fromisoformat(self.config["stats"]["on"  ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-        self.last_power_off_time  = datetime.datetime.fromisoformat(self.config["stats"]["off" ].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-        self.last_done_time       = datetime.datetime.fromisoformat(self.config["stats"]["done"].get("time", datetime.datetime.min.isoformat()))  # noqa E221
-        self.min_data_window      = datetime.timedelta(minutes=self.min_data_window_minutes)        # noqa E221
-        self.min_runtime          = datetime.timedelta(minutes=self.config["min_runtime_minutes"])  # noqa E221
-
     def save_config(self: 'Config') -> None:
-        self.config["off_power"              ] = self.min_off_power                     # noqa: E221, E202
-        self.config["max_idle_power"         ] = self.max_idle_power                    # noqa: E221, E202
-        self.config["min_data_window_minutes"] = self.min_data_window_minutes           # noqa: E221, E202
-        self.config["min_idle_count"         ] = self.min_idle_count                    # noqa: E221, E202
-        self.config["min_done_count"         ] = self.min_done_count                    # noqa: E221, E202
-        self.config["min_runtime_minutes"    ] = self.min_runtime.total_seconds() / 60  # noqa: E221, E202
-
-        self.config["re_remind"             ] = self.re_remind                 # noqa: E221, E202
-        self.config["re_remind_counter"     ] = self.re_remind_counter         # noqa: E221, E202
-
-        self.config["stats"]["on"  ]["time"] = self.last_power_on_time.isoformat()   # noqa: E221, E202
-        self.config["stats"]["off" ]["time"] = self.last_power_off_time.isoformat()  # noqa: E221, E202
-        self.config["stats"]["done"]["time"] = self.last_done_time.isoformat()       # noqa: E221, E202
-
-        deprecated_keys = ["min_idle_minutes"]
+        deprecated_keys = ["min_idle_minutes", {"stats": ["skipped_print_count"]}]
         for key in deprecated_keys:
-            if key in self.config:
-                del self.config[key]
+            if isinstance(key, Dict):
+                for parent_key, child_keys in key.items():
+                    if parent_key in self.config:
+                        for child_key in child_keys:
+                            if child_key in self.config[parent_key]:
+                                del self.config[parent_key][child_key]
+            else:
+                if key in self.config:
+                    del self.config[key]
 
         with open(self.json_name, mode='w') as file:
             dump = json.dumps(self.config, indent=4)
             file.write(dump)
-
-    def increase_skipped_count(self: 'Config') -> None:
-        self.config["stats"]["skipped_print_count"] = self.config["stats"].get("skipped_print_count", 0) + 1
-
-    def reset_skipped_count(self: 'Config') -> None:
-        self.config["stats"]["skipped_print_count"] = 0
-
-    @property
-    def skipped_count(self: 'Config') -> int:
-        return int(self.config["stats"].get("skipped_print_count", 0))
 
 
 class Tasmota:
@@ -306,17 +347,14 @@ def print_done(
     suppress_message: bool,
 ) -> bool:
     eprint("Done")
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
-
-    comparable_time = max(config.last_done_time, last_sent_time)
     last_on_or_off = max(config.last_power_on_time, config.last_power_off_time)
-
-    if comparable_time - last_on_or_off < config.min_data_window:
+    if current_done_time - last_on_or_off < config.min_data_window:
         return False
 
     config.config["stats"]["done"]["time"] = current_done_time.isoformat()
     config.config["stats"]["done"]["power_total"] = latest_total_power
 
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["done"].get("last_sent", datetime.datetime.min.isoformat()))
     sending_message = last_sent_time.year == 1 or last_sent_time < config.last_done_time
 
     if not sending_message:
@@ -348,19 +386,15 @@ def print_off(
     suppress_message: bool,
 ) -> bool:
     eprint("Off")
-    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
-    last_off_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("time", datetime.datetime.min.isoformat()))
-
-    comparable_time = max(config.last_power_off_time, last_sent_time)
     last_on_or_done = max(config.last_power_on_time, config.last_done_time)
-
-    if comparable_time - last_on_or_done < config.min_data_window:
+    if current_power_off_time - last_on_or_done < config.min_data_window:
         return False
 
     config.config["stats"]["off"]["time"] = current_power_off_time.isoformat()
     config.config["stats"]["off"]["power_total"] = latest_total_power
 
-    sending_message = last_sent_time.year == 1 or last_sent_time < last_off_time
+    last_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["off"].get("last_sent", datetime.datetime.min.isoformat()))
+    sending_message = last_sent_time.year == 1 or last_sent_time < config.last_power_off_time
     if not sending_message:
         return False
 
@@ -385,14 +419,8 @@ def print_on(
     eprint("On")
     previous_sent_time = datetime.datetime.fromisoformat(config.config["stats"]["on"].get("last_sent", datetime.datetime.min.isoformat()))
 
-    comparable_time = max(config.last_power_on_time, previous_sent_time)
-    last_off_or_done_time = min(config.last_power_off_time, config.last_done_time)
-
-    if last_off_or_done_time > comparable_time:
-        return False
-
     if previous_sent_time >= current_power_on_time:
-        # already sent for current on-event
+        eprint("already sent for current on-event")
         return False
 
     config.config["stats"]["on"]["time"] = current_power_on_time.isoformat()
@@ -437,9 +465,8 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         time_earliest = min(time_earliest or time, time)
 
         delta = time_latest - time_earliest
-        idle_delta = datetime.timedelta(minutes=config.min_data_window_minutes)
         # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
-        if count > config.min_idle_count and delta > idle_delta:
+        if count > config.min_idle_count and delta > config.min_data_window:
             break
 
         last_total_power = line[header.index("Total")]
