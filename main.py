@@ -66,22 +66,6 @@ class Config():
         self.config["max_idle_power"] = value
 
     @property
-    def min_idle_count(self: 'Config') -> int:
-        return int(self.config["min_idle_count"])
-
-    @min_idle_count.setter
-    def min_idle_count(self: 'Config', value: int) -> None:
-        self.config["min_idle_count"] = value
-
-    @property
-    def min_done_count(self: 'Config') -> int:
-        return int(self.config["min_done_count"])
-
-    @min_done_count.setter
-    def min_done_count(self: 'Config', value: int) -> None:
-        self.config["min_done_count"] = value
-
-    @property
     def re_remind(self: 'Config') -> bool:
         return bool(self.config["re_remind"])
 
@@ -208,10 +192,8 @@ class Config():
             "max_idle_power": 5,
             "min_runtime_minutes": 20,
             "min_data_window_minutes": 0.9,
-            "min_idle_count": 5,
-            "min_done_count": 4,
             "re_remind": False,
-            "re_remind_counter": 0,
+
             "stats": {
                 "on": {
                     "time": datetime.datetime.min.isoformat(),
@@ -234,7 +216,7 @@ class Config():
         self.config = update_dict_recursive(self.config, default, reset)
 
     def save_config(self: 'Config') -> None:
-        deprecated_keys = ["min_idle_minutes", {"stats": ["skipped_print_count"]}]
+        deprecated_keys = ["min_idle_minutes", {"stats": ["skipped_print_count"]}, "min_done_count", "min_idle_count"]
         for key in deprecated_keys:
             if isinstance(key, Dict):
                 for parent_key, child_keys in key.items():
@@ -419,7 +401,7 @@ def print_done(
         time_since_last_sent = current_done_time - config.stats_done_last_sent
         if time_since_last_sent >= fib_delta:
             re_remind_now = True
-        eprint(f"{time_since_last_sent=}, {fib_delta=}, {config.re_remind_counter=} {re_remind_now=}")
+        eprint(f"{current_done_time=} - {config.stats_done_last_sent=} = {time_since_last_sent=},  {fib_delta=}, {config.re_remind_counter=} {re_remind_now=}")
     # endregion re_remind
 
     if last_on_or_off <= config.stats_done_last_sent:
@@ -441,7 +423,7 @@ def print_done(
 
     if suppress_message is False:
         message = f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig"
-        if re_remind_now:
+        if re_remind_now and config.re_remind_counter > 0:
             time_since_done = current_done_time - config.stats_done_time
             message += f" seit {time_since_done}\nErinnerung Nr. {config.re_remind_counter}"
         else:
@@ -528,7 +510,7 @@ def print_on(
     return True
 
 
-def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_reset_stats: bool = False) -> None:
+def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_reset_stats: bool = False, interval: float = 10) -> None:
     # read csv file
     with open(csv_log_name, mode='r') as file:
         csv_reader = csv.reader(file, delimiter=',')
@@ -543,8 +525,6 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
 
     config = Config(json_name, mock_reset_stats)
 
-    done_count = 0
-    off_count = 0
     time_earliest = datetime.datetime.max
     time_latest = datetime.datetime.min
     last_total_power = 0.0
@@ -557,16 +537,11 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         time_earliest = min(time_earliest or time, time)
 
         delta = time_latest - time_earliest
-        # print(f"{count=}, {min_idle_count=}, {delta=}, {idle_delta=}")
-        if count > config.min_idle_count and delta > config.min_data_window:
+        if count > config.min_data_window.total_seconds() / interval and delta > config.min_data_window:
             break
 
         last_total_power = float(line[header.index("Total")])
-        if config.min_off_power < power <= config.max_idle_power:
-            done_count += 1
-        if power <= config.min_off_power:
-            off_count += 1
-        # print(f"{count=}, {done_count=}, {min_time=}, {max_time=}, {delta=}")
+        # print(f"{count=}, {min_time=}, {max_time=}, {delta=}")
 
     power_list = power_list[::-1]  # reverse back
 
@@ -578,7 +553,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     eprint(csv_log_name, f"{power_list=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}")
 
     sent_on = sent_off = sent_done = False
-    if all(power <= config.min_off_power for power in power_list[:-1]) and power_list[-1] >= config.max_idle_power:
+    if all(power <= config.min_off_power for power in power_list[:-1]) and power_list[-1] > config.min_off_power:
         sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
     elif median_power <= config.min_off_power:
         sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
@@ -603,7 +578,7 @@ def prune_file(csv_log_name: str) -> None:
     pass
 
 
-def do_once(ipv4: str, debug: bool = False) -> None:
+def do_once(ipv4: str, debug: bool = False, interval: float = 10) -> None:
     file_name = log_to_csv(ipv4, suppress_saving=debug)
     if file_name is None:
         return
@@ -618,9 +593,9 @@ def do_once(ipv4: str, debug: bool = False) -> None:
             for offset_from_end in tqdm.tqdm(range(length_of_log - 1, -1, -1), dynamic_ncols=True):
                 # print()
                 # eprint(f"{offset_from_end=}")
-                check_status(file_name, offset_from_end, offset_from_end == length_of_log - 1)
+                check_status(file_name, offset_from_end, offset_from_end == length_of_log - 1, interval=interval)
     else:
-        check_status(file_name)
+        check_status(file_name, interval=interval)
         prune_file(file_name)
 
 
@@ -638,11 +613,12 @@ def main() -> None:
     ]
 
     total_start = time.time()
-    for i in range(10, 61, 10):
+    interval = 10
+    for i in range(interval, 60 + 61 % interval, interval):
         for ip in ips:
             start = time.time()
             print()
-            do_once(ip, debug)
+            do_once(ip, debug, interval)
             end = time.time()
             eprint(ip, end - total_start, end - start)
             eprint()
