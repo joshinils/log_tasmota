@@ -159,6 +159,16 @@ class Config():
         self.config["stats"]["done"]["power_total"] = value
     # endregion done
 
+    # region running
+    @property
+    def stats_running_time(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["running"].get("time", datetime.datetime.min.isoformat()))
+
+    @stats_running_time.setter
+    def stats_running_time(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["running"]["time"] = value.isoformat()
+    # endregion running
+
     @property
     def min_data_window(self: 'Config') -> datetime.timedelta:
         return datetime.timedelta(minutes=float(self.config["min_data_window_minutes"]))
@@ -209,6 +219,9 @@ class Config():
                     "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
                     "power_total": 0.0
+                },
+                "running": {
+                    "time": datetime.datetime.min.isoformat(),
                 },
             }
         }
@@ -550,23 +563,31 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     mean_power = statistics.mean(power_list)
     max_power = max(power_list)
 
-    eprint(csv_log_name, f"{power_list=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}")
-
-    sent_on = sent_off = sent_done = False
+    sent_on = sent_off = sent_done = sent_running = False
     if all(power <= config.min_off_power for power in power_list[:-1]) and power_list[-1] > config.min_off_power:
         sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+    elif all(power >= config.max_idle_power for power in power_list):
+        config.stats_running_time = time_latest
+        sent_running = True
     elif median_power <= config.min_off_power:
         sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
     elif config.min_off_power <= median_power <= config.max_idle_power:
         sent_done = print_done(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
+    else:
+        fall_through = True
+
+    if fall_through:
+        eprint(csv_log_name, f"{power_list=} {min_power=}, {median_power=}, {mean_power=}, {max_power=}   FALLTHROUGH   FALLTHROUGH   FALLTHROUGH")
+    else:
+        eprint(csv_log_name, f"{power_list=} {min_power=}, {median_power=}, {mean_power=}, {max_power=} — {sent_on=}, {sent_off=}, {sent_done=}, {sent_running=}")
 
     config.save_config()
 
     # eprint(f"{len(lines)=}")
     if mock_reset_stats:
-        print(",".join(header + ["sent_on", "sent_off", "sent_done"]))
+        print(",".join(header + ["sent_on", "sent_off", "sent_done", "sent_running"]))
     if mock_run_offset_from_end:
-        print(",".join(lines[-1] + [str(sent_on), str(sent_off), str(sent_done)]))
+        print(",".join(lines[-1] + [str(sent_on), str(sent_off), str(sent_done), str(sent_running)]))
 
     # print(csv_log_name)
     # print(header)
