@@ -403,13 +403,16 @@ def print_done(
     if current_done_time - last_on_or_off < config.min_runtime:
         eprint("too short")
         return False
+    elif current_done_time - config.stats_running_time < config.min_data_window:
+        eprint("time since actively-running less than minimum-data-window")
+        return False
     else:
         eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
 
     # region re_remind
     re_remind_now = False
     if config.re_remind:
-        n_th_fib = max(300, fib(config.re_remind_counter))  # minimum 5 minutes, or increas by fibonacci
+        n_th_fib = max(300, fib(config.re_remind_counter))  # increase by Fibonacci, minimum 5 minutes
         fib_delta = datetime.timedelta(seconds=n_th_fib)
         time_since_last_sent = current_done_time - config.stats_done_last_sent
         if time_since_last_sent >= fib_delta:
@@ -465,6 +468,11 @@ def print_off(
     eprint("Off")
     last_on_or_done = max(config.stats_power_on_time, config.stats_done_time)
     if current_power_off_time - last_on_or_done < config.min_runtime:
+        eprint("too short")
+        return False
+
+    if current_power_off_time - config.stats_running_time < config.min_data_window:
+        eprint("time since actively-running less than minimum-data-window")
         return False
 
     if last_on_or_done <= config.stats_power_off_last_sent:
@@ -564,6 +572,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     max_power = max(power_list)
 
     sent_on = sent_off = sent_done = sent_running = False
+    fall_through = False
     if all(power <= config.min_off_power for power in power_list[:-1]) and power_list[-1] > config.min_off_power:
         sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
     elif all(power >= config.max_idle_power for power in power_list):
