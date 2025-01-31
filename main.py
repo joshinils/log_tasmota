@@ -302,7 +302,7 @@ class Config():
                     "last_sent": datetime.datetime.min.isoformat(),
                     "power_total": 0.0,
                     "notification": {
-                        "server-mail": 1,
+                        "server-mail": 0,
                         "todo": 0,
                     },
                 },
@@ -486,9 +486,11 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
 home = expanduser("~")
 with open(f"{home}/Documents/erinner_bot/server-mail.id", 'r') as f:
     server_mail_id = f.read()
-tasmota_thread_id = "4061"
+server_mail_tasmota_thread_id = "4061"
 
-# exit()
+with open(f"{home}/Documents/erinner_bot/todo_group.id", 'r') as f:
+    todo_id = f.read()
+todo_tasmota_thread_id = None
 
 
 def print_done(
@@ -509,7 +511,7 @@ def print_done(
     else:
         eprint(f"{current_done_time=} - {last_on_or_off=} < {config.min_data_window=}     {current_done_time - last_on_or_off=}")
 
-    # region re_remind
+    # region re_remind (done)
     re_remind_now = False
     if config.re_remind:
         n_th_fib = max(300, fib(config.re_remind_counter))  # increase by Fibonacci, minimum 5 minutes
@@ -518,7 +520,7 @@ def print_done(
         if time_since_last_sent >= fib_delta:
             re_remind_now = True
         eprint(f"{current_done_time=} - {config.stats_done_last_sent=} = {time_since_last_sent=},  {fib_delta=}, {config.re_remind_counter=} {re_remind_now=}")
-    # endregion re_remind
+    # endregion re_remind (done)
 
     if last_on_or_off <= config.stats_done_last_sent:
         if not re_remind_now:
@@ -537,6 +539,7 @@ def print_done(
     else:
         eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}; {re_remind_now=}")
 
+    result_ok = False
     if suppress_message is False:
         message = f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig"
         if re_remind_now and config.re_remind_counter > 0:
@@ -547,11 +550,26 @@ def print_done(
             time_used = config.stats_done_time - config.stats_power_on_time
             message += f"\n{power_used:4.2f}kWh verbraucht in {time_used}"
 
-        result = telegram_bot_sendtext(message, server_mail_id, disable_notification=False, message_thread_id=tasmota_thread_id)
-        if result.get("ok"):
-            config.stats_done_last_sent = datetime.datetime.now()
-            config.re_remind_counter += 1
+        if config.stats_done_notification_server_mail > 0:
+            result = telegram_bot_sendtext(
+                message,
+                server_mail_id,
+                disable_notification=config.stats_done_notification_server_mail == 1,
+                message_thread_id=server_mail_tasmota_thread_id,
+            )
+            result_ok = result_ok or bool(result.get("ok"))
+        if config.stats_done_notification_todo > 0:
+            result = telegram_bot_sendtext(
+                message,
+                todo_id,
+                disable_notification=config.stats_done_notification_todo == 1,
+                message_thread_id=todo_tasmota_thread_id,
+            )
+            result_ok = result_ok or bool(result.get("ok"))
     else:
+        result_ok = True
+
+    if result_ok:
         config.stats_done_last_sent = datetime.datetime.now()
         config.re_remind_counter += 1
 
@@ -586,14 +604,31 @@ def print_off(
     if not sending_message:
         return False
 
+    result_ok = False
     if suppress_message is False:
-        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, disable_notification=True, message_thread_id=tasmota_thread_id)
-        if result.get("ok"):
-            config.stats_power_off_last_sent = datetime.datetime.now()
-            config.re_remind_counter = 0
+        if config.stats_off_notification_server_mail > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} aus",
+                server_mail_id,
+                disable_notification=config.stats_done_notification_server_mail == 1,
+                message_thread_id=server_mail_tasmota_thread_id,
+            )
+            result_ok = result_ok or bool(result.get("ok"))
+        if config.stats_off_notification_todo > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} aus",
+                todo_id,
+                disable_notification=config.stats_done_notification_todo == 1,
+                message_thread_id=todo_tasmota_thread_id,
+            )
+            result_ok = result_ok or bool(result.get("ok"))
     else:
+        result_ok = True
+
+    if result_ok:
         config.stats_power_off_last_sent = datetime.datetime.now()
-        config.re_remind_counter = 0
+
+    config.re_remind_counter = 0
 
     return True
 
@@ -619,14 +654,31 @@ def print_on(
     config.stats_power_on_time = current_power_on_time
     config.stats_on_power_total = float(lines[-1][header.index("Total")])
 
+    result_ok = False
     if suppress_message is False:
-        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, disable_notification=True, message_thread_id=tasmota_thread_id)
-        if result.get("ok"):
-            config.stats_power_on_last_sent = datetime.datetime.now()
-            config.re_remind_counter = 0
+        if config.stats_on_notification_server_mail > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet",
+                server_mail_id,
+                disable_notification=config.stats_done_notification_server_mail == 1,
+                message_thread_id=server_mail_tasmota_thread_id,
+            )
+            result_ok = bool(result.get("ok"))
+        if config.stats_on_notification_todo > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet",
+                todo_id,
+                disable_notification=config.stats_done_notification_todo == 1,
+                message_thread_id=todo_tasmota_thread_id,
+            )
+            result_ok = bool(bool(result.get("ok")))
     else:
+        result_ok = True
+
+    if result_ok:
         config.stats_power_on_last_sent = datetime.datetime.now()
-        config.re_remind_counter = 0
+
+    config.re_remind_counter = 0
 
     return True
 
