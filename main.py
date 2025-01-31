@@ -471,13 +471,14 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
     home = expanduser("~")
     with open(f"{home}/Documents/erinner_bot/TOKEN", 'r') as f:
         bot_token = f.read()
-    if message_thread_id is not None:
-        send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}&disable_notification={disable_notification}&message_thread_id={message_thread_id}'
-    else:
-        send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}&disable_notification={disable_notification}'
 
-    eprint(f"{send_text=}")
-    response = requests.get(send_text)
+    notify = "&disable_notification" if disable_notification else ""
+    message_thread = f"&message_thread_id={message_thread_id}" if message_thread_id is not None else ""
+
+    sendable_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}{notify}{message_thread}'
+
+    eprint(f"{sendable_text=}")
+    response = requests.get(sendable_text)
     response_json: Dict = response.json()
     eprint(type(response), response_json)
     return response_json
