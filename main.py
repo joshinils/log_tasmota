@@ -105,6 +105,22 @@ class Config():
     @stats_on_power_total.setter
     def stats_on_power_total(self: 'Config', value: float) -> None:
         self.config["stats"]["on"]["power_total"] = value
+
+    @property
+    def stats_on_notification_server_mail(self: 'Config') -> int:
+        return int(self.config["stats"]["on"]["notification"]["server-mail"])
+
+    @stats_on_notification_server_mail.setter
+    def stats_on_notification_server_mail(self: 'Config', value: int) -> None:
+        self.config["stats"]["on"]["notification"]["server-mail"] = value
+
+    @property
+    def stats_on_notification_todo(self: 'Config') -> int:
+        return int(self.config["stats"]["on"]["notification"]["todo"])
+
+    @stats_on_notification_todo.setter
+    def stats_on_notification_todo(self: 'Config', value: int) -> None:
+        self.config["stats"]["on"]["notification"]["todo"] = value
     # endregion on
 
     # region off
@@ -131,6 +147,22 @@ class Config():
     @stats_off_power_total.setter
     def stats_off_power_total(self: 'Config', value: float) -> None:
         self.config["stats"]["off"]["power_total"] = value
+
+    @property
+    def stats_off_notification_server_mail(self: 'Config') -> int:
+        return int(self.config["stats"]["off"]["notification"]["server-mail"])
+
+    @stats_off_notification_server_mail.setter
+    def stats_off_notification_server_mail(self: 'Config', value: int) -> None:
+        self.config["stats"]["off"]["notification"]["server-mail"] = value
+
+    @property
+    def stats_off_notification_todo(self: 'Config') -> int:
+        return int(self.config["stats"]["off"]["notification"]["todo"])
+
+    @stats_off_notification_todo.setter
+    def stats_off_notification_todo(self: 'Config', value: int) -> None:
+        self.config["stats"]["off"]["notification"]["todo"] = value
     # endregion off
 
     # region done
@@ -157,6 +189,22 @@ class Config():
     @stats_done_power_total.setter
     def stats_done_power_total(self: 'Config', value: float) -> None:
         self.config["stats"]["done"]["power_total"] = value
+
+    @property
+    def stats_done_notification_server_mail(self: 'Config') -> int:
+        return int(self.config["stats"]["done"]["notification"]["server-mail"])
+
+    @stats_done_notification_server_mail.setter
+    def stats_done_notification_server_mail(self: 'Config', value: int) -> None:
+        self.config["stats"]["done"]["notification"]["server-mail"] = value
+
+    @property
+    def stats_done_notification_todo(self: 'Config') -> int:
+        return int(self.config["stats"]["done"]["notification"]["todo"])
+
+    @stats_done_notification_todo.setter
+    def stats_done_notification_todo(self: 'Config', value: int) -> None:
+        self.config["stats"]["done"]["notification"]["todo"] = value
     # endregion done
 
     # region running
@@ -167,6 +215,38 @@ class Config():
     @stats_running_time.setter
     def stats_running_time(self: 'Config', value: datetime.datetime) -> None:
         self.config["stats"]["running"]["time"] = value.isoformat()
+
+    @property
+    def stats_running_last_sent(self: 'Config') -> datetime.datetime:
+        return datetime.datetime.fromisoformat(self.config["stats"]["running"].get("last_sent", datetime.datetime.min.isoformat()))
+
+    @stats_running_last_sent.setter
+    def stats_running_last_sent(self: 'Config', value: datetime.datetime) -> None:
+        self.config["stats"]["running"]["last_sent"] = value.isoformat()
+
+    @property
+    def stats_running_power_total(self: 'Config') -> float:
+        return float(self.config["stats"]["running"].get("power_total", 0))
+
+    @stats_running_power_total.setter
+    def stats_running_power_total(self: 'Config', value: float) -> None:
+        self.config["stats"]["running"]["power_total"] = value
+
+    @property
+    def stats_running_notification_server_mail(self: 'Config') -> int:
+        return int(self.config["stats"]["running"]["notification"]["server-mail"])
+
+    @stats_running_notification_server_mail.setter
+    def stats_running_notification_server_mail(self: 'Config', value: int) -> None:
+        self.config["stats"]["running"]["notification"]["server-mail"] = value
+
+    @property
+    def stats_running_notification_todo(self: 'Config') -> int:
+        return int(self.config["stats"]["running"]["notification"]["todo"])
+
+    @stats_running_notification_todo.setter
+    def stats_running_notification_todo(self: 'Config', value: int) -> None:
+        self.config["stats"]["running"]["notification"]["todo"] = value
     # endregion running
 
     @property
@@ -208,20 +288,41 @@ class Config():
                 "on": {
                     "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0.0
+                    "power_total": 0.0,
+                    "notification": {
+                        # 0: do not send
+                        # 1: send, muted
+                        # 2: send, with notification
+                        "server-mail": 1,
+                        "todo": 0,
+                    },
                 },
-                "off": {
+                "running": {
                     "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0.0
+                    "power_total": 0.0,
+                    "notification": {
+                        "server-mail": 1,
+                        "todo": 0,
+                    },
                 },
                 "done": {
                     "time": datetime.datetime.min.isoformat(),
                     "last_sent": datetime.datetime.min.isoformat(),
-                    "power_total": 0.0
+                    "power_total": 0.0,
+                    "notification": {
+                        "server-mail": 2,
+                        "todo": 0,
+                    },
                 },
-                "running": {
+                "off": {
                     "time": datetime.datetime.min.isoformat(),
+                    "last_sent": datetime.datetime.min.isoformat(),
+                    "power_total": 0.0,
+                    "notification": {
+                        "server-mail": 1,
+                        "todo": 1,
+                    },
                 },
             }
         }
@@ -386,7 +487,6 @@ home = expanduser("~")
 with open(f"{home}/Documents/erinner_bot/server-mail.id", 'r') as f:
     server_mail_id = f.read()
 tasmota_thread_id = "4061"
-# print(telegram_bot_sendtext("Test", server_mail_id, True, tasmota_thread_id))
 
 # exit()
 
@@ -447,7 +547,7 @@ def print_done(
             time_used = config.stats_done_time - config.stats_power_on_time
             message += f"\n{power_used:4.2f}kWh verbraucht in {time_used}"
 
-        result = telegram_bot_sendtext(message, server_mail_id, False, tasmota_thread_id)
+        result = telegram_bot_sendtext(message, server_mail_id, disable_notification=False, message_thread_id=tasmota_thread_id)
         if result.get("ok"):
             config.stats_done_last_sent = datetime.datetime.now()
             config.re_remind_counter += 1
@@ -487,7 +587,7 @@ def print_off(
         return False
 
     if suppress_message is False:
-        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, True, tasmota_thread_id)
+        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} aus", server_mail_id, disable_notification=True, message_thread_id=tasmota_thread_id)
         if result.get("ok"):
             config.stats_power_off_last_sent = datetime.datetime.now()
             config.re_remind_counter = 0
@@ -520,7 +620,7 @@ def print_on(
     config.stats_on_power_total = float(lines[-1][header.index("Total")])
 
     if suppress_message is False:
-        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, True, tasmota_thread_id)
+        result = telegram_bot_sendtext(f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet", server_mail_id, disable_notification=True, message_thread_id=tasmota_thread_id)
         if result.get("ok"):
             config.stats_power_on_last_sent = datetime.datetime.now()
             config.re_remind_counter = 0
