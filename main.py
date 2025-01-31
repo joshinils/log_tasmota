@@ -577,6 +577,11 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
         sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
     elif all(power >= config.max_idle_power for power in power_list):
         config.stats_running_time = time_latest
+        config.re_remind_counter = 0  # always reset re-remind counter if running
+        if config.stats_power_on_time < config.stats_done_time and config.stats_power_on_time < config.stats_power_off_time:
+            eprint("fallback set on-time anyway if missed", f"{config.stats_power_on_time=} < {config.stats_done_time=} and {config.stats_power_on_time=} < {config.stats_power_off_time=}")
+            sent_on = print_on(config, time_latest, csv_log_name, lines, header, mock_run_offset_from_end > 0)
+
         sent_running = True
     elif median_power <= config.min_off_power:
         sent_off = print_off(config, time_earliest, last_total_power, csv_log_name, mock_run_offset_from_end > 0)
