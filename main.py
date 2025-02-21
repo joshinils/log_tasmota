@@ -465,6 +465,7 @@ def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
 
 def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> Dict:
     escape_chars = ['_', '*', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']  # not including "`", which I use to format as code
+    message += f"\ndn={disable_notification}"
     for char in escape_chars:
         message = message.replace(char, f"\\{char}")
 
