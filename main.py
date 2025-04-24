@@ -602,7 +602,7 @@ def print_done(
             )
             result_ok = result_ok and bool(result.get("ok"))
 
-        if config.stats_done_notification_todo > 0:
+        if config.stats_done_notification_todo > 0 and "Erinnerung" not in message:
             result = telegram_bot_sendtext(
                 message,
                 chat_id=todo_id,
