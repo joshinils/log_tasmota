@@ -121,6 +121,14 @@ class Config():
     @stats_on_notification_todo.setter
     def stats_on_notification_todo(self: 'Config', value: int) -> None:
         self.config["stats"]["on"]["notification"]["todo"] = value
+
+    @property
+    def stats_on_notification_jo_private(self: 'Config') -> int:
+        return int(self.config["stats"]["on"]["notification"]["jo_private"])
+
+    @stats_on_notification_jo_private.setter
+    def stats_on_notification_jo_private(self: 'Config', value: int) -> None:
+        self.config["stats"]["on"]["notification"]["jo_private"] = value
     # endregion on
 
     # region off
@@ -163,6 +171,14 @@ class Config():
     @stats_off_notification_todo.setter
     def stats_off_notification_todo(self: 'Config', value: int) -> None:
         self.config["stats"]["off"]["notification"]["todo"] = value
+
+    @property
+    def stats_off_notification_jo_private(self: 'Config') -> int:
+        return int(self.config["stats"]["off"]["notification"]["jo_private"])
+
+    @stats_off_notification_jo_private.setter
+    def stats_off_notification_jo_private(self: 'Config', value: int) -> None:
+        self.config["stats"]["off"]["notification"]["jo_private"] = value
     # endregion off
 
     # region done
@@ -205,6 +221,14 @@ class Config():
     @stats_done_notification_todo.setter
     def stats_done_notification_todo(self: 'Config', value: int) -> None:
         self.config["stats"]["done"]["notification"]["todo"] = value
+
+    @property
+    def stats_done_notification_jo_private(self: 'Config') -> int:
+        return int(self.config["stats"]["done"]["notification"]["jo_private"])
+
+    @stats_done_notification_jo_private.setter
+    def stats_done_notification_jo_private(self: 'Config', value: int) -> None:
+        self.config["stats"]["done"]["notification"]["jo_private"] = value
     # endregion done
 
     # region running
@@ -247,6 +271,14 @@ class Config():
     @stats_running_notification_todo.setter
     def stats_running_notification_todo(self: 'Config', value: int) -> None:
         self.config["stats"]["running"]["notification"]["todo"] = value
+
+    @property
+    def stats_running_notification_jo_private(self: 'Config') -> int:
+        return int(self.config["stats"]["running"]["notification"]["jo_private"])
+
+    @stats_running_notification_jo_private.setter
+    def stats_running_notification_jo_private(self: 'Config', value: int) -> None:
+        self.config["stats"]["running"]["notification"]["jo_private"] = value
     # endregion running
 
     @property
@@ -295,6 +327,7 @@ class Config():
                         # 2: send, with notification
                         "server-mail": 1,
                         "todo": 0,
+                        "jo_private": 0,
                     },
                 },
                 "running": {
@@ -304,6 +337,7 @@ class Config():
                     "notification": {
                         "server-mail": 0,
                         "todo": 0,
+                        "jo_private": 0,
                     },
                 },
                 "done": {
@@ -311,8 +345,9 @@ class Config():
                     "last_sent": datetime.datetime.min.isoformat(),
                     "power_total": 0.0,
                     "notification": {
-                        "server-mail": 2,
-                        "todo": 0,
+                        "server-mail": 1,
+                        "todo": 1,
+                        "jo_private": 2,
                     },
                 },
                 "off": {
@@ -321,7 +356,8 @@ class Config():
                     "power_total": 0.0,
                     "notification": {
                         "server-mail": 1,
-                        "todo": 1,
+                        "todo": 0,
+                        "jo_private": 0,
                     },
                 },
             }
@@ -494,7 +530,12 @@ with open(f"{home}/Documents/erinner_bot/todo_group.id", 'r') as f:
     todo_id = f.read()
 todo_tasmota_thread_id = None
 
+with open(f"{home}/Documents/erinner_bot/jo_private.id", 'r') as f:
+    jo_private_id = f.read()
+jo_private_tasmota_thread_id = None
 
+
+# region print done
 def print_done(
     config: Config,
     current_done_time: datetime.datetime,
@@ -541,7 +582,7 @@ def print_done(
     else:
         eprint(f"{config.stats_done_last_sent=} < {config.stats_done_time=}; {re_remind_now=}")
 
-    result_ok = False
+    result_ok = True
     if suppress_message is False:
         message = f"{config.config.get('device_name', f'`{csv_log_name}`')} Fertig"
         if re_remind_now and config.re_remind_counter > 0:
@@ -555,19 +596,29 @@ def print_done(
         if config.stats_done_notification_server_mail > 0:
             result = telegram_bot_sendtext(
                 message,
-                server_mail_id,
+                chat_id=server_mail_id,
                 disable_notification=config.stats_done_notification_server_mail == 1,
                 message_thread_id=server_mail_tasmota_thread_id,
             )
-            result_ok = result_ok or bool(result.get("ok"))
+            result_ok = result_ok and bool(result.get("ok"))
+
         if config.stats_done_notification_todo > 0:
             result = telegram_bot_sendtext(
                 message,
-                todo_id,
+                chat_id=todo_id,
                 disable_notification=config.stats_done_notification_todo == 1,
                 message_thread_id=todo_tasmota_thread_id,
             )
-            result_ok = result_ok or bool(result.get("ok"))
+            result_ok = result_ok and bool(result.get("ok"))
+
+        if config.stats_done_notification_jo_private > 0:
+            result = telegram_bot_sendtext(
+                message,
+                chat_id=jo_private_id,
+                disable_notification=config.stats_done_notification_jo_private == 1,
+                message_thread_id=jo_private_tasmota_thread_id,
+            )
+            result_ok = result_ok and bool(result.get("ok"))
     else:
         result_ok = True
 
@@ -576,8 +627,10 @@ def print_done(
         config.re_remind_counter += 1
 
     return True
+# endregion print done
 
 
+# region print off
 def print_off(
     config: Config,
     current_power_off_time: datetime.datetime,
@@ -606,24 +659,34 @@ def print_off(
     if not sending_message:
         return False
 
-    result_ok = False
+    result_ok = True
     if suppress_message is False:
         if config.stats_off_notification_server_mail > 0:
             result = telegram_bot_sendtext(
                 f"{config.config.get('device_name', f'`{csv_log_name}`')} aus",
-                server_mail_id,
+                chat_id=server_mail_id,
                 disable_notification=config.stats_done_notification_server_mail == 1,
                 message_thread_id=server_mail_tasmota_thread_id,
             )
-            result_ok = result_ok or bool(result.get("ok"))
+            result_ok = result_ok and bool(result.get("ok"))
+
         if config.stats_off_notification_todo > 0:
             result = telegram_bot_sendtext(
                 f"{config.config.get('device_name', f'`{csv_log_name}`')} aus",
-                todo_id,
+                chat_id=todo_id,
                 disable_notification=config.stats_done_notification_todo == 1,
                 message_thread_id=todo_tasmota_thread_id,
             )
-            result_ok = result_ok or bool(result.get("ok"))
+            result_ok = result_ok and bool(result.get("ok"))
+
+        if config.stats_off_notification_jo_private > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} aus",
+                chat_id=jo_private_id,
+                disable_notification=config.stats_done_notification_jo_private == 1,
+                message_thread_id=jo_private_tasmota_thread_id,
+            )
+            result_ok = result_ok and bool(result.get("ok"))
     else:
         result_ok = True
 
@@ -633,8 +696,10 @@ def print_off(
     config.re_remind_counter = 0
 
     return True
+# endregion print off
 
 
+# region print on
 def print_on(
     config: Config,
     current_power_on_time: datetime.datetime,
@@ -656,24 +721,34 @@ def print_on(
     config.stats_power_on_time = current_power_on_time
     config.stats_on_power_total = float(lines[-1][header.index("Total")])
 
-    result_ok = False
+    result_ok = True
     if suppress_message is False:
         if config.stats_on_notification_server_mail > 0:
             result = telegram_bot_sendtext(
                 f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet",
-                server_mail_id,
+                chat_id=server_mail_id,
                 disable_notification=config.stats_done_notification_server_mail == 1,
                 message_thread_id=server_mail_tasmota_thread_id,
             )
-            result_ok = bool(result.get("ok"))
+            result_ok = result_ok and bool(result.get("ok"))
+
         if config.stats_on_notification_todo > 0:
             result = telegram_bot_sendtext(
                 f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet",
-                todo_id,
+                chat_id=todo_id,
                 disable_notification=config.stats_done_notification_todo == 1,
                 message_thread_id=todo_tasmota_thread_id,
             )
-            result_ok = bool(bool(result.get("ok")))
+            result_ok = result_ok and bool(result.get("ok"))
+
+        if config.stats_on_notification_jo_private > 0:
+            result = telegram_bot_sendtext(
+                f"{config.config.get('device_name', f'`{csv_log_name}`')} gestartet",
+                chat_id=jo_private_id,
+                disable_notification=config.stats_done_notification_jo_private == 1,
+                message_thread_id=jo_private_tasmota_thread_id,
+            )
+            result_ok = result_ok and bool(result.get("ok"))
     else:
         result_ok = True
 
@@ -683,6 +758,7 @@ def print_on(
     config.re_remind_counter = 0
 
     return True
+# endregion print on
 
 
 def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_reset_stats: bool = False, interval: float = 10) -> None:
