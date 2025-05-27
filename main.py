@@ -501,7 +501,6 @@ def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
 
 def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> Dict:
     escape_chars = ['_', '*', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']  # not including "`", which I use to format as code
-    message += f"\ndn={disable_notification}"
     for char in escape_chars:
         message = message.replace(char, f"\\{char}")
 
@@ -509,7 +508,7 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
     with open(f"{home}/Documents/erinner_bot/TOKEN", 'r') as f:
         bot_token = f.read()
 
-    notify = "&disable_notification" if disable_notification else ""
+    notify = "&disable_notification=true" if disable_notification else ""
     message_thread = f"&message_thread_id={message_thread_id}" if message_thread_id is not None else ""
 
     sendable_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&parse_mode=MarkdownV2&text={message}{notify}{message_thread}'
