@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v6.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: check-yaml
@@ -22,15 +22,26 @@ repos:
 #     hooks:
 #     -   id: autopep8
 -   repo: https://github.com/PyCQA/flake8
-    rev: '4.0.1'
+    rev: '7.3.0'
     hooks:
     -   id: flake8
 -   repo: https://github.com/pycqa/isort
-    rev: '5.12.0'
+    rev: '6.0.1'
     hooks:
     -   id: isort
         name: isort
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 'v1.14.1'  # Use the sha / tag you want to point at
+    rev: 'v1.17.1'  # Use the sha / tag you want to point at
     hooks:
     -   id: mypy
+-   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
+    rev: v0.8.0
+    hooks:
+    -   id: pre-commit-update
+        # Example args (use your own configuration)
+        args:
+        # - --dry-run
+        -   --no-all-versions # just stable, no alpha/beta
+        -   --verbose
+        -   --warnings
+        -   --jobs=16

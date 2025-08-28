@@ -8,9 +8,11 @@ import math
 import statistics
 import sys
 import time
+from collections.abc import Iterable
+from itertools import pairwise
 from numbers import Number
 from os.path import expanduser
-from typing import Dict, List, Optional, SupportsComplex
+from typing import Any, SupportsComplex, TypedDict, TypeVar, cast
 
 import requests
 import tqdm
@@ -19,8 +21,8 @@ from lxml import html
 Numeric = SupportsComplex | Number | int | float
 
 
-def eprint(*args, **kwargs) -> None:  # type: ignore
-    print(f"{inspect.stack()[1][1]}:{inspect.stack()[1][2]};{inspect.stack()[1][3]}", *args, file=sys.stderr, **kwargs)
+def eprint(*args, **kwargs) -> None:  # type: ignore  # pyright: ignore[reportMissingParameterType, reportUnknownParameterType]
+    print(f"{inspect.stack()[1][1]}:{inspect.stack()[1][2]};{inspect.stack()[1][3]}", *args, file=sys.stderr, **kwargs)  # pyright: ignore[reportUnknownArgumentType]
 
 
 def fib(n: int) -> int:
@@ -29,13 +31,55 @@ def fib(n: int) -> int:
     return int((p**n - q**n) / math.sqrt(5))
 
 
-def update_dict_recursive(config: Dict, default: Dict, reset: bool = False) -> Dict:
+T = TypeVar("T")
+
+
+def triplewise(iterable: Iterable[T]) -> Iterable[tuple[T, T, T]]:
+    "Return overlapping triplets from an iterable"
+    # triplewise('ABCDEFG') --> ABC BCD CDE DEF EFG
+    for (a, _), (b, c) in pairwise(pairwise(iterable)):
+        yield a, b, c
+
+
+class StatsDict(TypedDict):
+    time: str  # datetime.datetime as iso formatted str
+    last_sent: str  # datetime.datetime as iso formatted str
+    power_total: float
+    notification: dict[str, int]
+
+
+class ConfigDict(TypedDict):
+    off_power: float
+    max_idle_power: float
+    re_remind: bool
+    re_remind_counter: int
+    stats: dict[str, StatsDict]
+
+    min_data_window_minutes: float
+    min_runtime_minutes: float
+
+
+T_val = TypeVar("T_val")
+
+
+def update_dict_recursive(config: dict[str, T_val], default: dict[str, T_val], reset: bool = False) -> dict[str, T_val]:
     for default_key, default_value in default.items():
         if isinstance(default_value, dict):
             if default_key not in config:
-                config[default_key] = {}
-            foo = config[default_key]
-            config[default_key] = update_dict_recursive(foo, default_value)
+                config[default_key] = cast(T_val, {})
+            config[default_key] = cast(
+                T_val,
+                update_dict_recursive(
+                    cast(
+                        dict[str, T_val],
+                        config[default_key]
+                    ),
+                    cast(
+                        dict[str, T_val],
+                        default_value
+                    )
+                )
+            )
         else:
             if reset:
                 config[default_key] = default_value
@@ -47,7 +91,8 @@ def update_dict_recursive(config: Dict, default: Dict, reset: bool = False) -> D
 class Config():
     json_name: str
 
-    config: Dict
+    config: ConfigDict
+    # config: dict[str, float | str | bool | int | datetime.datetime | datetime.timedelta]
 
     @property
     def min_off_power(self: 'Config') -> float:
@@ -298,7 +343,7 @@ class Config():
         self.config["min_runtime_minutes"] = value.total_seconds() / 60
 
     def __init__(self: 'Config', json_name: str, reset: bool = False) -> None:
-        self.config = {}
+        self.config = cast(ConfigDict, {})
         self.json_name = json_name
         self.load_config(reset)
 
@@ -363,20 +408,20 @@ class Config():
             }
         }
 
-        self.config = update_dict_recursive(self.config, default, reset)
+        self.config = cast(ConfigDict, update_dict_recursive(cast(dict[str, Any], self.config), default, reset))  # type: ignore
 
     def save_config(self: 'Config') -> None:
         deprecated_keys = ["min_idle_minutes", {"stats": ["skipped_print_count"]}, "min_done_count", "min_idle_count"]
         for key in deprecated_keys:
-            if isinstance(key, Dict):
+            if isinstance(key, dict):
                 for parent_key, child_keys in key.items():
                     if parent_key in self.config:
                         for child_key in child_keys:
-                            if child_key in self.config[parent_key]:
-                                del self.config[parent_key][child_key]
+                            if child_key in self.config[parent_key]:  # type: ignore
+                                del self.config[parent_key][child_key]  # type: ignore
             else:
                 if key in self.config:
-                    del self.config[key]
+                    del self.config[key]  # type: ignore
 
         with open(self.json_name, mode='w') as file:
             dump = json.dumps(self.config, indent=4)
@@ -394,10 +439,10 @@ class Tasmota:
         self.url = f'http://{self.ipv4}/'
         self.stream_open = False
 
-    def _get_from_xpath(self: 'Tasmota', x: str | Numeric):  # type: ignore
+    def _get_from_xpath(self: 'Tasmota', x: str | Numeric) -> str:
         r = requests.get(self.url + '', timeout=10, )
         tree = html.fromstring(r.content)
-        c = tree.xpath(f'{x}/text()')
+        c: str = tree.xpath(f'{x}/text()')
         return c
 
     def get_name(self: 'Tasmota') -> str:
@@ -418,11 +463,11 @@ class Tasmota:
             self.stream_open = True
         return f'http://{self.ipv4}:81/stream'
 
-    def get_all_monitoring(self: 'Tasmota') -> Dict:
+    def get_all_monitoring(self: 'Tasmota') -> dict[str, str]:
         r = requests.get(f'{self.url}cm?cmnd=Status%208')
         text = str(r.content)
         j = json.loads(text[2:-1])
-        data = {}
+        data: dict[str, str] = {}
         data["Time"] = j['StatusSNS']['Time']
         data["Temperature1"] = j['StatusSNS']['ANALOG']["Temperature1"]
         for k, v in j['StatusSNS']['ENERGY'].items():
@@ -431,7 +476,7 @@ class Tasmota:
         return data
 
 
-def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
+def log_to_csv(ipv4: str, suppress_saving: bool = False) -> str | None:
     dev = Tasmota(ipv4)
 
     attribute_unit = {
@@ -489,7 +534,7 @@ def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
     # write new line
     with open(file_name, mode='a') as file:
         csv_writer = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        row = []
+        row: list[str] = []
         data = dev.get_all_monitoring()
         for attribute in header:
             if attribute in attribute_unit.keys():
@@ -499,7 +544,7 @@ def log_to_csv(ipv4: str, suppress_saving: bool = False) -> Optional[str]:
     return file_name
 
 
-def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: Optional[str] = None) -> Dict:
+def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool = True, message_thread_id: str | None = None) -> dict[str, object]:
     escape_chars = ['_', '*', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']  # not including "`", which I use to format as code
     for char in escape_chars:
         message = message.replace(char, f"\\{char}")
@@ -515,7 +560,7 @@ def telegram_bot_sendtext(message: str, chat_id: str, disable_notification: bool
 
     eprint(f"{sendable_text=}")
     response = requests.get(sendable_text)
-    response_json: Dict = response.json()
+    response_json: dict[str, object] = response.json()
     eprint(type(response), response_json)
     return response_json
 
@@ -703,8 +748,8 @@ def print_on(
     config: Config,
     current_power_on_time: datetime.datetime,
     csv_log_name: str,
-    lines: List[List[str]],
-    header: List[str],
+    lines: list[list[str]],
+    header: list[str],
     suppress_message: bool,
 ) -> bool:
     eprint("On")
@@ -778,10 +823,10 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     time_earliest = datetime.datetime.max
     time_latest = datetime.datetime.min
     last_total_power = 0.0
-    power_list = []
+    power_list: list[float] = []
     for count, line in enumerate(lines[::-1]):
         power = float(line[header.index("Power")])
-        power_list += [power]
+        power_list.append(power)
         time = datetime.datetime.fromisoformat(line[header.index("Time")])
         time_latest = max(time_latest or time, time)
         time_earliest = min(time_earliest or time, time)
@@ -838,8 +883,53 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
     #     print(line)
 
 
-def prune_file(csv_log_name: str) -> None:
-    pass
+def prune_file(csv_log_name: str, _is_implemented: bool = True) -> None:
+    # open file
+    # compare triplets of lines values
+    # if center line is the same as the one above and below, remove it
+    # always keep last N lines from the original, so as not to confuse recency logic in other places
+
+    if not _is_implemented:
+        return
+
+    interesting_keys = ["Power", "Total", "TotalStartTime", "power1"]
+
+    keep_n_lines = 100
+
+    with open(csv_log_name, mode='r') as file:
+        csv_reader = csv.reader(file, delimiter=',')
+        header = next(csv_reader)
+        all_lines = list(csv_reader)
+        lines = all_lines[:-keep_n_lines]
+        lines_kept_back = all_lines[-keep_n_lines:]
+
+    kept_lines = [lines[0]]
+
+    for line_triplet in triplewise(lines):
+        for key in interesting_keys:
+            prev_val = line_triplet[0][header.index(key)]
+            curr_val = line_triplet[1][header.index(key)]
+
+            if prev_val != curr_val:
+                kept_lines.append(line_triplet[1])
+                break
+
+            next_val = line_triplet[2][header.index(key)]
+
+            if curr_val != next_val:
+                kept_lines.append(line_triplet[1])
+                break
+
+    kept_lines.append(lines[-1])
+    kept_lines.extend(lines_kept_back)
+
+    lines = kept_lines
+
+    with open(csv_log_name, mode='w') as file:
+        csv_writer = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        csv_writer.writerow(header)
+        for line in lines:
+            csv_writer.writerow(line)
 
 
 def do_once(ipv4: str, debug: bool = False, interval: float = 10) -> None:
@@ -879,6 +969,7 @@ def main() -> None:
     total_start = time.time()
     interval = 10
     for i in range(interval, 60 + 61 % interval, interval):
+        end = float("inf")
         for ip in ips:
             start = time.time()
             print()
@@ -887,7 +978,10 @@ def main() -> None:
             eprint(ip, end - total_start, end - start)
             eprint()
         if i < 60:
-            time.sleep(i - (end - total_start))
+            sleep_length = i - (end - total_start)
+
+            if sleep_length > 0:
+                time.sleep(sleep_length)
 
 
 if __name__ == "__main__":
