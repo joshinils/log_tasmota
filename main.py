@@ -22,7 +22,7 @@ Numeric = SupportsComplex | Number | int | float
 
 
 def eprint(*args, **kwargs) -> None:  # type: ignore  # pyright: ignore[reportMissingParameterType, reportUnknownParameterType]
-    print(f"{inspect.stack()[1][1]}:{inspect.stack()[1][2]};{inspect.stack()[1][3]}", *args, file=sys.stderr, **kwargs)  # pyright: ignore[reportUnknownArgumentType]
+    print(f"{datetime.datetime.now()}: {inspect.stack()[1][1]}:{inspect.stack()[1][2]};{inspect.stack()[1][3]}", *args, file=sys.stderr, **kwargs)  # pyright: ignore[reportUnknownArgumentType]
 
 
 def fib(n: int) -> int:
@@ -833,6 +833,7 @@ def check_status(csv_log_name: str, mock_run_offset_from_end: int = 0, mock_rese
 
         delta = time_latest - time_earliest
         if count > config.min_data_window.total_seconds() / interval and delta > config.min_data_window:
+            eprint(f"enough data collected: {count=} lines, {time_earliest=}, {time_latest=}, {delta=}")
             break
 
         last_total_power = float(line[header.index("Total")])
